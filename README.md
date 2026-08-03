@@ -95,7 +95,9 @@ Architecture and data flow: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 │   ├── lib/             # api.ts, labels.ts, format.ts
 │   └── hooks/           # useTaskStream (SSE)
 │
-├── scripts/             # smoke tests and the headless pipeline harness
+├── scripts/             # vantage.ps1 launcher, smoke tests, pipeline harness
+├── start.bat            # one-click start  ┐ wrappers around scripts/vantage.ps1
+├── stop.bat             # one-click stop   ┘
 └── docs/                # architecture, agents, deployment
 ```
 
@@ -107,6 +109,34 @@ Architecture and data flow: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 - Python ≥ 3.13 (managed by [uv](https://docs.astral.sh/uv/))
 - Node.js ≥ 20
+
+### Quick start (Windows)
+
+```
+start.bat        # installs deps, starts both services, opens the browser
+stop.bat         # stops both and frees their ports
+```
+
+Double-click either from Explorer, or run them from a terminal. `start.bat`
+creates `backend/.env` from the example on first run — put your
+`GEMINI_API_KEY` in it ([get one here](https://aistudio.google.com/apikey)) and
+start again.
+
+Both are wrappers around [`scripts/vantage.ps1`](scripts/vantage.ps1), which
+takes a few more options:
+
+```powershell
+.\scripts\vantage.ps1 -Action status        # what is running, and is the key loaded
+.\scripts\vantage.ps1 -Action restart
+.\scripts\vantage.ps1 -Reload -Show         # uvicorn --reload, visible consoles
+.\scripts\vantage.ps1 -BackendPort 9000 -FrontendPort 3000
+```
+
+Service logs go to `.run-logs/`. Reload is off by default — a file-watch restart
+mid-run would kill an in-flight research pipeline and its SSE connection.
+
+The manual steps below are the same thing, and the reference for other
+platforms.
 
 ### 1. Configure
 
