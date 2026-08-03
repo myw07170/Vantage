@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets — never commit
+.env
+backend/.env
+*.key
+
+# Local database / runtime state
+*.db
+*.db-wal
+*.db-shm
+.run-logs/
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Headless pipeline output
+report-*.json

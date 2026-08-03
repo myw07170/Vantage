@@ -1,0 +1,38 @@
+[project]
+name = "vantage"
+version = "0.1.0"
+description = "Vantage — evidence-traceable AI competitive intelligence workbench"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.6",
+    "uvicorn[standard]>=0.32.1",
+    "pydantic>=2.10.4",
+    "pydantic-settings>=2.7.1",
+    "python-dotenv>=1.0.1",
+    # LLM — Google Gemini
+    "google-genai>=1.0.0",
+    # Collection / extraction
+    "httpx>=0.28.1",
+    "beautifulsoup4>=4.12.3",
+    "trafilatura>=1.12.2",
+    # Keyless dev-fallback search provider
+    "ddgs>=9.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.25.0",
+]
+
+# The backend runs from source via `--app-dir backend`; uv only manages the
+# virtualenv, it does not need to build this project as a distributable package.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
