@@ -2,7 +2,7 @@
 
 ## The idea
 
-Vantage models competitive research as a consulting team at work. 48 analysts are
+Vantage models competitive research as a consulting team at work. 52 analysts are
 defined in [`backend/app/data/experts.json`](../backend/app/data/experts.json),
 organized in three tiers. Each engagement gets a team picked for the brief:
 the decision tier scopes and signs off, the strategy and specialist tiers do the
@@ -11,8 +11,16 @@ analysis and collection.
 These are role definitions with real domain grounding — an analyst's
 `knowledge_base` names the actual sources they work from (SEC EDGAR, STR, FDA
 510(k), Circana, USAspending) — and that framing shapes what the model looks for
-and how it reasons. They are prompt personas and trace labels, not 48 separate
-code paths.
+and how it reasons. [`personas.py`](../backend/app/core/personas.py) builds a
+system-prompt preamble from the staffed analyst's profile and prepends it to
+every stage that reasons or writes, so the roster is a behavior layer rather
+than a set of labels. It is not 52 separate code paths: one module turns a
+profile into a prompt, a staffing decision and a stage assignment.
+
+Every persona block ends with the same guard — *your background shapes which
+sources you reach for and what you interrogate; it never licenses a claim the
+evidence below does not support*. An analyst identity is there to direct
+attention, never to supply facts from the model's own memory.
 
 ## Tiers
 
@@ -20,7 +28,7 @@ code paths.
 |---|---|---|---|
 | **L3 · Decision** | 3 | `decision` | Scope the brief, assemble the team, adjudicate quality, sign off |
 | **L2 · Strategy** | 9 | `strategy` | Strategy, pricing, user research, competitive intel, finance, architecture, marketing, data, compliance |
-| **L1 · Specialist** | 36 | `industry` (24) + `function` (12) | Industry depth and research tradecraft |
+| **L1 · Specialist** | 40 | `industry` (28) + `function` (12) | Industry depth and research tradecraft |
 
 ### The decision tier
 
@@ -32,26 +40,49 @@ code paths.
 
 ### Specialists
 
-**Industry (24):** financial services, SaaS, robotics, semiconductors,
+**Industry (28):** financial services, SaaS, robotics, semiconductors,
 healthcare, energy and EV, cloud, AI and foundation models, retail, gaming,
 blockchain, media, logistics, restaurants, beauty, real estate, education,
 apparel, agriculture, travel, insurance, sustainability, aerospace, consumer
-hardware.
+hardware, cybersecurity and identity, telecom, HR tech, legal and govtech.
 
 **Function (12):** web collection, fact-checking, international research, survey
 methodology, user interviews, social listening, review mining, patents, hiring
 intelligence, public filings, data visualization, archiving.
 
+## Staffing
+
+The decision tier is permanent staff, not a model pick: the director scopes and
+signs off, the chief analyst owns authorship, the quality officer red-teams.
+Only the working team is chosen per brief, in three steps —
+
+1. **Score.** Every profile is scored against the brief on lexical overlap with
+   its `knowledge_tags`, `skills` and `role_title`. Deterministic and free.
+2. **Shortlist.** All nine L2s plus the best-matching industry and function
+   specialists — roughly half the roster — are offered to a model, which picks
+   the advisors and specialists and gives each pick a reason.
+3. **Normalize.** `normalize_team` repairs the result: unknown and duplicate ids
+   dropped, size bounds enforced, and a strategy advisor and a collection
+   specialist guaranteed. A malformed dispatch cannot silently degrade a run,
+   and a failed call falls through to the best-scoring team.
+
 ## Role to stage
 
-| Stage | Tier | Assignment |
-|---|---|---|
-| intake / orchestrator | L3 | The director |
-| collect | L1 | First specialist on the team; social listening goes to a `function` analyst |
-| analyze | L2 | First strategy advisor |
-| audit | L3 | The quality officer (L3-003) |
-| write | L2 + L1 | The chief analyst, or the lead |
-| done | L3 | The director |
+Stages are assigned by capability — matched against an analyst's tags and skills
+— rather than by whoever sorts first.
+
+| Stage | Assignment |
+|---|---|
+| intake / orchestrator / done | The director (L3-001) |
+| collect | The function specialist whose tradecraft is collection; the crawler when staffed |
+| sentiment | The function specialist whose tradecraft is social listening or review mining |
+| analyze | The strategy advisor whose specialism best fits the brief's focus areas |
+| audit / verify | The quality officer (L3-003) |
+| write | Per section: pricing to the pricing strategist, risk to compliance, market reads to the industry analyst, the rest to the chief analyst |
+
+Section authorship is not cosmetic. Each section carries its assigned analyst's
+persona, so different sections are argued from different expertise, and a
+rewrite ordered by the verify stage goes back to whoever wrote it.
 
 ## Message protocol
 

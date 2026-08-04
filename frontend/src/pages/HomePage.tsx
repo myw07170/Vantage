@@ -65,6 +65,9 @@ export default function HomePage() {
   const taRef = useRef<HTMLTextAreaElement>(null)
   const experts = useExpertStore((s) => s.experts)
   const wall = experts.slice(0, 14)
+  // Read from the roster, not written in: the copy stays true as the team grows,
+  // and reads without a number for the frame before the roster loads.
+  const teamSize = experts.length
 
   async function submit(q: string) {
     const query = q.trim()
@@ -111,8 +114,9 @@ export default function HomePage() {
           animate="animate"
           className="mt-3 text-center text-lg text-ink-2"
         >
-          A team of 48 analysts researches the market, cross-checks every source,
-          and writes a report you can audit line by line.
+          {teamSize > 0 ? `A team of ${teamSize} analysts` : 'A team of analysts'}{' '}
+          researches the market, cross-checks every source, and writes a report you
+          can audit line by line.
         </motion.p>
 
         <motion.div
@@ -213,7 +217,7 @@ export default function HomePage() {
               onClick={() => navigate('/experts')}
               className="z-0 ml-2 inline-flex h-9 items-center rounded-chip bg-primary-tint px-3 text-tag font-medium text-primary-deep hover:bg-primary-soft/40"
             >
-              Meet all 48 analysts →
+              {teamSize > 0 ? `Meet all ${teamSize} analysts →` : 'Meet the analysts →'}
             </button>
           </div>
         </div>

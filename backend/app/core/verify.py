@@ -477,6 +477,7 @@ def llm_report_review(
     vr: VerifyReport,
     model: Optional[str] = None,
     section_notes: Optional[Dict[str, str]] = None,
+    persona: str = "",
 ) -> Dict[str, Any]:
     """A copy editor's read of the finished document.
 
@@ -485,6 +486,9 @@ def llm_report_review(
     confident number is actually backed by anything, so this asks a model to read
     the whole report at once — the only stage that ever sees it whole. Falls back
     to a rules-only verdict when the call fails.
+
+    `persona` is the quality officer's preamble, built by the caller so this
+    module stays independent of the roster.
     """
     from app.core.llm import chat_json
 
@@ -521,10 +525,14 @@ def llm_report_review(
                 {
                     "role": "system",
                     "content": (
-                        "You are the quality officer on a competitive-intelligence "
-                        "team, reading the finished report before it ships. You are "
-                        "the only reviewer who sees every section at once, so "
-                        "cross-section problems are yours to catch.\n\n"
+                        (
+                            persona
+                            or "You are the quality officer on a competitive-"
+                            "intelligence team.\n\n"
+                        )
+                        + "You are reading the finished report before it ships. "
+                        "You are the only reviewer who sees every section at "
+                        "once, so cross-section problems are yours to catch.\n\n"
                         "Look for, in priority order:\n"
                         "1. CONTRADICTION — two sections reaching opposite verdicts "
                         "on the same question (who leads, who is cheaper, where the "

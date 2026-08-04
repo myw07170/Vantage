@@ -30,7 +30,7 @@ The point is not that it writes quickly. The point is that you can check it.
 
 | | |
 |---|---|
-| **Multi-agent team** | 48 specialists across three tiers (decision / strategy / execution). A director picks the right team for each brief. |
+| **Multi-agent team** | 52 specialists across three tiers (decision / strategy / execution). A director picks the right team for each brief. |
 | **Deep Research pipeline** | `intake → orchestrator → collect → analyze → audit → write → verify → done`, with a rework loop that actually fires |
 | **Real web collection** | Multi-angle search, full-text extraction, relevance and garbled-text filtering |
 | **Structured knowledge** | Feature trees, pricing models and user personas as typed objects, rendered as matrices, tables and cards |
@@ -90,7 +90,7 @@ Architecture and data flow: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 │   ├── core/            # orchestration, LLM, search, fetching, credibility,
 │   │                    #   audit, verify, trace
 │   │   └── search/      # provider chain: exa / tavily / ddg
-│   ├── data/            # experts.json — the 48-analyst roster
+│   ├── data/            # experts.json — the 52-analyst roster
 │   └── main.py          # FastAPI entry point
 │
 ├── frontend/src/
@@ -251,7 +251,7 @@ provider worked, it just found nothing.
 | | |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Modules, data flow, the pipeline stage by stage |
-| [docs/AGENTS.md](docs/AGENTS.md) | The 48 analysts, message protocol, the four rules |
+| [docs/AGENTS.md](docs/AGENTS.md) | The 52 analysts, message protocol, the four rules |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Local setup, production notes, troubleshooting |
 
 ---

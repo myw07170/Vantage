@@ -22,7 +22,7 @@ export const useExpertStore = create<ExpertState>((set, get) => ({
     try {
       const experts = await fetchExperts()
       // Indexed on load — `byId` is called per row in several long lists, and a
-      // linear scan over 48 records per row adds up.
+      // linear scan over the whole roster per row adds up.
       const index = Object.fromEntries(experts.map((e) => [e.id, e]))
       set({ experts, index, loaded: true, loading: false })
     } catch {

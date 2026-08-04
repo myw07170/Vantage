@@ -15,11 +15,15 @@ def load_experts() -> list[dict]:
         return json.load(f)
 
 
+@lru_cache
+def _index() -> dict[str, dict]:
+    """id -> record. Staffing and persona building look experts up in loops,
+    so the linear scan this replaces was O(roster) on every prompt built."""
+    return {e["id"]: e for e in load_experts()}
+
+
 def expert_by_id(eid: str) -> Optional[dict]:
-    for e in load_experts():
-        if e["id"] == eid:
-            return e
-    return None
+    return _index().get(eid)
 
 
 def experts_by_level(level: str) -> list[dict]:

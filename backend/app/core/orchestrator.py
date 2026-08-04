@@ -43,6 +43,22 @@ from app.core.fetcher import domain_of, fetch_page
 from app.core.llm import TOKEN_USAGE, chat, chat_json
 from app.core.metrics import compute_report_metrics, merge_quality_into_metrics
 from app.core.models import Envelope, Evidence, SourceType, make_claim
+from app.core.personas import (
+    CHIEF_ANALYST,
+    DIRECTOR,
+    MAX_L1,
+    MAX_L2,
+    MIN_L1,
+    MIN_L2,
+    QUALITY,
+    assign_stages,
+    normalize_team,
+    persona_block,
+    score_roster,
+    section_writer,
+    shortlist,
+    team_block,
+)
 from app.core.platforms import (
     PLATFORM_LABEL,
     PLATFORM_SOURCE_TYPE,
@@ -67,7 +83,7 @@ from app.core.verify import (
     sections_to_rewrite,
     verdict_of,
 )
-from app.data import expert_by_id, load_experts
+from app.data import expert_by_id
 
 _settings = get_settings()
 
@@ -417,8 +433,8 @@ def _plan_research(
                 {
                     "role": "system",
                     "content": (
-                        "You are a competitive research director. Break the request "
-                        "into a research plan.\n\n"
+                        persona_block(DIRECTOR)
+                        + "Break the request into a research plan.\n\n"
                         'Return JSON: {"subject":"full name of the primary subject",'
                         '"category":"the specific category, used to disambiguate '
                         'the name — e.g. \'AI coding assistant\', \'knowledge '
@@ -530,7 +546,16 @@ def _regex_brands(query: str) -> List[str]:
 
 # ── Expert dispatch ───────────────────────────────────────────────────────────
 def _dispatch_experts(query: str, brands: List[str], focus: List[str]) -> Dict[str, Any]:
-    experts = load_experts()
+    """Staff the engagement.
+
+    Three steps, only the middle one costing tokens: score the roster against
+    the brief and shortlist the plausible candidates, let a model pick from that
+    shortlist, then repair whatever it returns into a workable composition. The
+    decision tier is permanent staff — the pipeline has always routed intake,
+    audit and authorship to the same three leads, so they are not put to a vote.
+    """
+    scores = score_roster(query, brands, focus)
+    candidates = shortlist(scores)
     roster = [
         {
             "id": e["id"],
@@ -538,26 +563,34 @@ def _dispatch_experts(query: str, brands: List[str], focus: List[str]) -> Dict[s
             "level": e["level"],
             "role": e["role_title"],
             "skills": e.get("skills", [])[:3],
+            # The strongest subject-matter signal in the profile, and the terms a
+            # brief on their subject would actually use.
+            "expertise": e.get("knowledge_tags", []),
         }
-        for e in experts
+        for e in candidates
     ]
+    members: List[Dict[str, str]] = []
     try:
         data = chat_json(
             [
                 {
                     "role": "system",
                     "content": (
-                        "You are the commanding director of a competitive "
-                        "research firm. Pick the right team for this engagement "
-                        "from the roster.\n\n"
-                        "Rules: exactly 1 L3 decision-tier lead, 1-2 L2 strategy "
-                        "advisors, and 3-6 L1 specialists. Match specialists to "
-                        "the actual subject matter — a fintech question needs the "
-                        "financial services analyst, not the gaming one.\n"
+                        persona_block(DIRECTOR)
+                        + "Pick the working team for this engagement from the "
+                        "shortlist below. The decision tier — director, chief "
+                        "analyst and quality officer — is already staffed, so "
+                        "choose only the advisors and specialists who will do "
+                        "the work.\n\n"
+                        f"Rules: {MIN_L2}-{MAX_L2} L2 strategy advisors and "
+                        f"{MIN_L1}-{MAX_L1} L1 specialists. Match specialists to "
+                        "the actual subject matter — a fintech question needs "
+                        "the financial services analyst, not the gaming one — "
+                        "and keep at least one function specialist who can run "
+                        "collection and verification.\n"
                         "Give each pick a specific reason naming what they will "
                         "own and why they fit.\n"
-                        'Return JSON: {"lead":"expert id",'
-                        '"members":[{"id":"expert id","reason":"..."}]}'
+                        'Return JSON: {"members":[{"id":"expert id","reason":"..."}]}'
                     ),
                 },
                 {
@@ -566,7 +599,7 @@ def _dispatch_experts(query: str, brands: List[str], focus: List[str]) -> Dict[s
                         f"Research topic: {query}\n"
                         f"Competitors: {', '.join(brands)}\n"
                         f"Focus areas: {', '.join(focus)}\n"
-                        f"Roster: {json.dumps(roster)}"
+                        f"Shortlist: {json.dumps(roster)}"
                     ),
                 },
             ],
@@ -575,29 +608,14 @@ def _dispatch_experts(query: str, brands: List[str], focus: List[str]) -> Dict[s
             model=_model("fast"),
             purpose="Assemble the expert team",
         )
-        if isinstance(data, dict) and data.get("members"):
-            valid_ids = {e["id"] for e in experts}
-            members = [
-                {"id": m["id"], "reason": m.get("reason", "")}
-                for m in data["members"]
-                if isinstance(m, dict) and m.get("id") in valid_ids
-            ]
-            lead = data.get("lead") if data.get("lead") in valid_ids else None
-            if members:
-                if not lead:
-                    lead = members[0]["id"]
-                return {"lead": lead, "members": members}
+        if isinstance(data, dict) and isinstance(data.get("members"), list):
+            members = [m for m in data["members"] if isinstance(m, dict)]
     except Exception:
         pass
-    fallback = [
-        {"id": "L3-001", "reason": "Directs the engagement and signs off"},
-        {"id": "L2-001", "reason": "Reads the competitive structure"},
-        {"id": "L2-002", "reason": "Breaks down pricing and packaging"},
-        {"id": "L1-025", "reason": "Runs web collection and extraction"},
-        {"id": "L1-030", "reason": "Handles social listening and sentiment"},
-        {"id": "L3-003", "reason": "Enforces the four iron rules"},
-    ]
-    return {"lead": "L3-001", "members": fallback}
+
+    # `normalize_team` fills an empty list from the shortlist, so a failed call
+    # degrades to the best-scoring team rather than to a fixed one.
+    return {"lead": DIRECTOR, "members": normalize_team(members, scores)}
 
 
 DAG_NODES = [
@@ -995,17 +1013,17 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     await asyncio.sleep(0.15)
 
     # ---- 1. intake ----
-    yield _ev("node_update", {"node": "intake", "status": "working", "expert": "L3-001"})
+    yield _ev("node_update", {"node": "intake", "status": "working", "expert": DIRECTOR})
     yield _ev(
         "thought",
         {
-            "id": _sid("th"), "kind": "plan", "expert": "L3-001",
+            "id": _sid("th"), "kind": "plan", "expert": DIRECTOR,
             "text": f"Brief received: {query} ({cfg['label']} mode). Identifying "
                     "the competitive set and the dimensions that matter.",
             "ts": _now(),
         },
     )
-    trace.set_context(task_id, "L3-001", "intake", "Break down the research brief")
+    trace.set_context(task_id, DIRECTOR, "intake", "Break down the research brief")
     plan = await asyncio.to_thread(_plan_research, query, clar, cfg["max_angles"])
     for e in _drain_trace():
         yield e
@@ -1016,7 +1034,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     yield _ev(
         "thought",
         {
-            "id": _sid("th"), "kind": "plan", "expert": "L3-001",
+            "id": _sid("th"), "kind": "plan", "expert": DIRECTOR,
             "text": f"Competitive set: {', '.join(brands)}. Focus: {', '.join(focus)}. "
                     f"Searching from {len(angles)} angles — {', '.join(angles[:4])}"
                     f"{'…' if len(angles) > 4 else ''}.",
@@ -1027,8 +1045,8 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     yield _ev("node_update", {"node": "intake", "status": "done"})
 
     # ---- 2. orchestrator ----
-    yield _ev("node_update", {"node": "orchestrator", "status": "working", "expert": "L3-001"})
-    trace.set_context(task_id, "L3-001", "orchestrator", "Assemble the expert team")
+    yield _ev("node_update", {"node": "orchestrator", "status": "working", "expert": DIRECTOR})
+    trace.set_context(task_id, DIRECTOR, "orchestrator", "Assemble the expert team")
     dispatch = await asyncio.to_thread(_dispatch_experts, query, brands, focus)
     for e in _drain_trace():
         yield e
@@ -1037,7 +1055,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     yield _ev(
         "thought",
         {
-            "id": _sid("th"), "kind": "dispatch", "expert": "L3-001",
+            "id": _sid("th"), "kind": "dispatch", "expert": DIRECTOR,
             "text": f"{lead_expert.get('name','The director')} is leading a "
                     f"{len(member_ids)}-person team matched to this brief.",
             "ts": _now(),
@@ -1055,13 +1073,13 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         )
         await asyncio.sleep(0.04)
     env_collect = Envelope(
-        msg_id="env_" + uuid.uuid4().hex[:8], sender="L3-001", receiver="collect",
+        msg_id="env_" + uuid.uuid4().hex[:8], sender=DIRECTOR, receiver="collect",
         task_type="PRODUCE", payload={"brands": brands, "angles": angles},
     )
     yield _ev(
         "message",
         {
-            "id": _sid("m"), "kind": "team", "expert": "L3-001", "members": member_ids,
+            "id": _sid("m"), "kind": "team", "expert": DIRECTOR, "members": member_ids,
             "text": "Team is staffed. Beginning evidence collection.",
             "dispatch": dispatch["members"],
             "envelope": {
@@ -1073,17 +1091,11 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     yield _ev("progress", prog(14, "orchestrator", 0))
     yield _ev("node_update", {"node": "orchestrator", "status": "done"})
 
-    collector = next(
-        (m["id"] for m in dispatch["members"] if m["id"].startswith("L1")), "L1-025"
-    )
-    sentiment_expert = next(
-        (
-            m["id"]
-            for m in dispatch["members"]
-            if (expert_by_id(m["id"]) or {}).get("group") == "function"
-        ),
-        collector,
-    )
+    # Who owns each stage, matched on the tradecraft a stage actually needs
+    # rather than on which member id happens to sort first.
+    stages = assign_stages(member_ids, focus)
+    collector = stages["collect"]
+    sentiment_expert = stages["sentiment"]
 
     # ---- 3. collect ----
     yield _ev("node_update", {"node": "collect", "status": "working", "expert": collector})
@@ -1238,9 +1250,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         return
 
     # ---- 4. analyze ----
-    analyst = next(
-        (m["id"] for m in dispatch["members"] if m["id"].startswith("L2")), "L2-001"
-    )
+    analyst = stages["analyze"]
     yield _ev("node_update", {"node": "analyze", "status": "working", "expert": analyst})
     yield _ev(
         "thought",
@@ -1273,7 +1283,8 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     )
     trace.set_context(task_id, analyst, "analyze", "Build structured competitive knowledge")
     structured = await asyncio.to_thread(
-        _analyze_structured, query, brands, focus, evidences, cfg["structured_max_tokens"]
+        _analyze_structured, query, brands, focus, evidences,
+        cfg["structured_max_tokens"], team_block(member_ids),
     )
     for e in _drain_trace():
         yield e
@@ -1298,7 +1309,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     yield _ev("node_update", {"node": "analyze", "status": "done"})
 
     # ---- 5. audit (runs before writing, so rework improves what gets written) ----
-    auditor = next((m["id"] for m in dispatch["members"] if m["id"] == "L3-003"), "L3-003")
+    auditor = stages["audit"]
     yield _ev("node_update", {"node": "audit", "status": "working", "expert": auditor})
     yield _ev(
         "thought",
@@ -1313,7 +1324,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     trace.set_context(task_id, auditor, "audit", "Quality review: scores, issues, fixes")
     review_before = await asyncio.to_thread(
         llm_quality_review, query, brands, focus, claims, structured,
-        quality_before, _model("aux"),
+        quality_before, _model("aux"), persona_block(auditor),
     )
     for e in _drain_trace():
         yield e
@@ -1338,12 +1349,12 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         if not envelopes and review_before.get("verdict") == "rework":
             envelopes = [
                 Envelope(
-                    msg_id="env_" + uuid.uuid4().hex[:8], sender="L3-003",
+                    msg_id="env_" + uuid.uuid4().hex[:8], sender=QUALITY,
                     receiver="analyze", task_type="REWORK",
                     payload={"reason": "Reviewer requires stronger argument and cross-validation"},
                     issues=[
                         {"target": "review", "severity": "medium", "reason": r,
-                         "raised_by": "L3-003"}
+                         "raised_by": QUALITY}
                         for r in review_before.get("issues", [])[:4]
                     ],
                 )
@@ -1427,7 +1438,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
                     claims = analysis["claims"]
                     structured = await asyncio.to_thread(
                         _analyze_structured, query, brands, focus, evidences,
-                        cfg["structured_max_tokens"],
+                        cfg["structured_max_tokens"], team_block(member_ids),
                     )
                     analysis["structured"] = structured
                     yield _ev("node_update", {"node": "analyze", "status": "done"})
@@ -1448,7 +1459,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         trace.set_context(task_id, auditor, "audit", "Re-review after rework")
         review_after = await asyncio.to_thread(
             llm_quality_review, query, brands, focus, claims, structured,
-            quality_after, _model("aux"),
+            quality_after, _model("aux"), persona_block(auditor),
         )
         for e in _drain_trace():
             yield e
@@ -1487,9 +1498,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     yield _ev("progress", prog(70, "audit", len(evidences)))
 
     # ---- 6. write ----
-    writer = next(
-        (m["id"] for m in dispatch["members"] if m["id"] == "L3-002"), dispatch["lead"]
-    )
+    writer = stages["write"]
     yield _ev("node_update", {"node": "write", "status": "working", "expert": writer})
     section_ids = list(cfg["sections"])
     persp_sid = PERSPECTIVE_SECTION.get(perspective)
@@ -1500,13 +1509,20 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
             else len(section_ids)
         )
         section_ids.insert(insert_pos, persp_sid)
+    # The chief analyst owns the document, but each section is argued by
+    # whoever on the team actually knows the subject — pricing by the pricing
+    # strategist, risk by compliance — and carries that expert's persona.
+    section_authors = {
+        sid: section_writer(sid, member_ids, stages) for sid in section_ids
+    }
     yield _ev(
         "thought",
         {
             "id": _sid("th"), "kind": "plan", "expert": writer,
             "text": f"Writing {len(section_ids)} sections in parallel on "
-                    f"{_model('core')}. Requests are paced to stay inside the "
-                    "model's rate limit, so sections land progressively.",
+                    f"{_model('core')}, each assigned to the analyst who owns "
+                    "the subject. Requests are paced to stay inside the model's "
+                    "rate limit, so sections land progressively.",
             "ts": _now(),
         },
     )
@@ -1516,11 +1532,13 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     async def _write_one(sid: str):
         title = dict(SECTION_PLAN).get(sid, sid)
         model = _model("core") if sid in CORE_SECTIONS else _model("aux")
-        trace.set_context(task_id, writer, "write", f"Write section: {title}")
+        author = section_authors[sid]
+        trace.set_context(task_id, author, "write", f"Write section: {title}")
         return sid, await asyncio.to_thread(
             _write_single_section, sid, title, query, brands, focus,
             evidences, claims, analysis, model,
             cfg["min_paragraphs"], cfg["para_words"], cfg["section_max_tokens"],
+            persona=persona_block(author),
         )
 
     tasks = [asyncio.create_task(_write_one(sid)) for sid in section_ids]
@@ -1536,7 +1554,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         yield _ev(
             "thought",
             {
-                "id": _sid("th"), "kind": "finding", "expert": writer,
+                "id": _sid("th"), "kind": "finding", "expert": section_authors[sid],
                 "text": f"Section {done_count}/{total} complete: {title}.",
                 "ts": _now(),
             },
@@ -1548,11 +1566,15 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         )
 
     sentiment_text: Dict[str, Any] = {"paragraphs": [], "key_takeaway": "", "highlights": []}
+    # The listener who gathered the user voice also writes it up, and owns any
+    # rewrite the verify stage asks for.
+    section_authors["sentiment"] = sentiment_expert
     if sentiment.get("sample_size"):
         trace.set_context(task_id, sentiment_expert, "write", "Write section: User sentiment")
         sentiment_text = await asyncio.to_thread(
             _write_sentiment_narrative, query, brands, sentiment, _model("aux"),
             cfg["min_paragraphs"], cfg["para_words"], cfg["section_max_tokens"],
+            persona=persona_block(sentiment_expert),
         )
         for e in _drain_trace():
             yield e
@@ -1565,7 +1587,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     yield _ev("node_update", {"node": "write", "status": "done"})
 
     # ---- 7. verify (checks the document that came out, not the analysis) ----
-    verifier = next((m["id"] for m in dispatch["members"] if m["id"] == "L3-003"), "L3-003")
+    verifier = stages["verify"]
     yield _ev("node_update", {"node": "verify", "status": "working", "expert": verifier})
     yield _ev(
         "thought",
@@ -1629,7 +1651,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     trace.set_context(task_id, verifier, "verify", "Verify the written report")
     verify_review = await asyncio.to_thread(
         llm_report_review, query, brands, cleaned, section_titles, verify_order,
-        claims, vr, _model("aux"), section_notes,
+        claims, vr, _model("aux"), section_notes, persona_block(verifier),
     )
     for e in _drain_trace():
         yield e
@@ -1671,8 +1693,11 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         async def _rewrite_one(sid: str, findings):
             title = section_titles.get(sid, sid)
             model = _model("core") if sid in CORE_SECTIONS else _model("aux")
+            # Whoever argued the section corrects it — the persona that shaped
+            # the draft is the one that has to answer for its defects.
+            author = section_authors.get(sid, writer)
             trace.set_context(
-                task_id, writer, "verify", f"Rewrite after verification: {title}"
+                task_id, author, "verify", f"Rewrite after verification: {title}"
             )
             prev = sections_text.get(sid, {})
             draft = "\n".join(
@@ -1682,7 +1707,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
                 _write_single_section, sid, title, query, brands, focus,
                 evidences, claims, analysis, model,
                 cfg["min_paragraphs"], cfg["para_words"], cfg["section_max_tokens"],
-                rewrite_directive(findings), draft,
+                rewrite_directive(findings), draft, persona_block(author),
             )
 
         jobs = [asyncio.create_task(_rewrite_one(sid, fs)) for sid, fs in targets]
@@ -1864,7 +1889,8 @@ def _analyze(
                 {
                     "role": "system",
                     "content": (
-                        "You are a senior competitive analyst writing at the level "
+                        team_block(members)
+                        + "You are a senior competitive analyst writing at the level "
                         "of top-tier equity research or an MBB strategy engagement. "
                         "From the evidence provided — each item carries an "
                         "evidence_id — extract structured competitive insight that "
@@ -1953,7 +1979,8 @@ def _analyze(
 
 
 def _analyze_structured(
-    query, brands, focus, evidences: List[Evidence], max_tokens_param: int = 8000
+    query, brands, focus, evidences: List[Evidence], max_tokens_param: int = 8000,
+    persona: str = "",
 ) -> Dict[str, Any]:
     """Feature tree, pricing model and personas under a strict schema."""
     digest = _evidence_digest(evidences, limit=24)
@@ -1965,7 +1992,8 @@ def _analyze_structured(
                 {
                     "role": "system",
                     "content": (
-                        "You structure competitive knowledge. From the evidence "
+                        persona
+                        + "You structure competitive knowledge. From the evidence "
                         "below — each item carries an evidence_id — produce strict "
                         "JSON for every competitor. Fields must be complete and "
                         "consistently formatted. evidence_ids must be real ids from "
@@ -2167,13 +2195,16 @@ def _write_single_section(
     sid: str, title: str, query, brands, focus, evidences, claims, analysis,
     model: str, min_paragraphs: int = 5, para_words: str = "130-200",
     section_max_tokens: int = 6000, fix_directive: str = "",
-    previous_draft: str = "",
+    previous_draft: str = "", persona: str = "",
 ) -> Dict[str, Any]:
     """Write one section. Independent token budget, so a failure is isolated.
 
     `fix_directive` carries the verify stage's findings for a rewrite. It names
     the defects in this section specifically, so the second attempt corrects
     them rather than rolling the dice on the same prompt again.
+
+    `persona` is the assigned analyst's preamble, built by the caller so this
+    function stays independent of the roster.
     """
     field_map = {
         "summary": ["overview", "feature_tree", "pricing_model"],
@@ -2247,7 +2278,8 @@ def _write_single_section(
                 {
                     "role": "system",
                     "content": (
-                        "You write competitive analysis at the level of a top "
+                        persona
+                        + "You write competitive analysis at the level of a top "
                         "equity research note or an MBB strategy deliverable — "
                         "opinionated, evidence-led, willing to reach a verdict.\n\n"
                         f"This section: {section_role}\n\n"
@@ -2328,10 +2360,11 @@ def _write_single_section(
                 {
                     "role": "system",
                     "content": (
-                        f"You are a senior competitive analyst. Write at least "
-                        f"{min_paragraphs} paragraphs of roughly {para_words} words "
-                        "each for the section below, building a connected argument. "
-                        "Output prose only — no JSON, no heading."
+                        (persona or "You are a senior competitive analyst.\n\n")
+                        + f"Write at least {min_paragraphs} paragraphs of roughly "
+                        f"{para_words} words each for the section below, building "
+                        "a connected argument. Output prose only — no JSON, no "
+                        "heading."
                     ),
                 },
                 {
@@ -2366,7 +2399,7 @@ def _write_single_section(
 def _write_sentiment_narrative(
     query, brands, sentiment: Dict[str, Any], model: str,
     min_paragraphs: int = 5, para_words: str = "130-200",
-    section_max_tokens: int = 6000,
+    section_max_tokens: int = 6000, persona: str = "",
 ) -> Dict[str, Any]:
     """Interpret the sentiment data. Returns empty paragraphs when there is no data."""
     sample = sentiment.get("sample_size", 0)
@@ -2406,7 +2439,8 @@ def _write_sentiment_narrative(
                 {
                     "role": "system",
                     "content": (
-                        "You are a social-listening analyst and brand strategist. "
+                        persona
+                        + "You are a social-listening analyst and brand strategist. "
                         "Interpret the real sentiment data below.\n\n"
                         "Rules:\n"
                         "1. Work only from the data and quotes given. Never invent "

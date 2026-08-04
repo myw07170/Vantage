@@ -9,11 +9,17 @@ import { VEmpty } from '../components/ui'
 import { fadeUp, stagger } from '../lib/motion'
 import type { Expert, ExpertLevel } from '../types'
 
-const LEVEL_TABS: { key: ExpertLevel | 'all'; label: string; desc: string }[] = [
-  { key: 'all', label: 'Everyone', desc: '48 analysts' },
-  { key: 'L3', label: 'Decision', desc: '3 · direction and sign-off' },
-  { key: 'L2', label: 'Strategy', desc: '9 · method advisors' },
-  { key: 'L1', label: 'Specialist', desc: '36 · industry and function' },
+// Headcounts are rendered from the loaded roster rather than written in — the
+// team grows, and a hardcoded number here silently starts lying when it does.
+const LEVEL_TABS: {
+  key: ExpertLevel | 'all'
+  label: string
+  desc: (n: number) => string
+}[] = [
+  { key: 'all', label: 'Everyone', desc: (n) => `${n} analysts` },
+  { key: 'L3', label: 'Decision', desc: (n) => `${n} · direction and sign-off` },
+  { key: 'L2', label: 'Strategy', desc: (n) => `${n} · method advisors` },
+  { key: 'L1', label: 'Specialist', desc: (n) => `${n} · industry and function` },
 ]
 
 const LEVEL_BG: Record<ExpertLevel, string> = {
@@ -57,6 +63,12 @@ export default function ExpertsPage() {
   const [tab, setTab] = useState<ExpertLevel | 'all'>('all')
   const [kw, setKw] = useState('')
 
+  const counts = useMemo(() => {
+    const by: Record<string, number> = { all: experts.length }
+    for (const e of experts) by[e.level] = (by[e.level] ?? 0) + 1
+    return by
+  }, [experts])
+
   const filtered = useMemo(() => {
     const q = kw.trim().toLowerCase()
     return experts.filter((e) => {
@@ -82,8 +94,9 @@ export default function ExpertsPage() {
       <header className="flex flex-col gap-1">
         <h1 className="font-serif text-h1 text-ink">Analyst team</h1>
         <p className="text-aux text-ink-2">
-          48 specialists across three tiers — decision, strategy and execution. The
-          director assembles the right team for each brief.
+          {experts.length > 0 ? `${experts.length} specialists` : 'Specialists'} across
+          three tiers — decision, strategy and execution. The director assembles the
+          right team for each brief.
         </p>
       </header>
 
@@ -112,7 +125,7 @@ export default function ExpertsPage() {
               <span
                 className={`text-tag ${tab === t.key ? 'text-white/80' : 'text-ink-3'}`}
               >
-                {t.desc}
+                {t.desc(counts[t.key] ?? 0)}
               </span>
             </button>
           ))}

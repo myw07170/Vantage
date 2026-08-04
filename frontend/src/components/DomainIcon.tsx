@@ -45,6 +45,10 @@ import {
   FileBarChart,
   LineChart,
   FolderTree,
+  Fingerprint,
+  SignalHigh,
+  UsersRound,
+  Gavel,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -96,6 +100,10 @@ const map: Record<string, LucideIcon> = {
   'doc-chart': FileBarChart,
   'line-bar': LineChart,
   folder: FolderTree,
+  fingerprint: Fingerprint,
+  signal: SignalHigh,
+  users: UsersRound,
+  gavel: Gavel,
 }
 
 export function DomainIcon({

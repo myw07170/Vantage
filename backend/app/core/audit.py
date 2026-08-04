@@ -172,6 +172,7 @@ def llm_quality_review(
     structured: Dict[str, Any],
     qr: "QualityReport",
     model: Optional[str] = None,
+    persona: str = "",
 ) -> Dict[str, Any]:
     """The quality officer's editorial read — judgement the rules cannot encode.
 
@@ -179,6 +180,9 @@ def llm_quality_review(
     conclusion actually follows from its evidence, so this asks a model to
     review like a managing editor and return per-dimension scores, concrete
     problems and actionable fixes. Falls back to the rule metrics if it fails.
+
+    `persona` is the quality officer's preamble, built by the caller so this
+    module stays independent of the roster.
     """
     from app.core.llm import chat_json
 
@@ -225,8 +229,12 @@ def llm_quality_review(
                 {
                     "role": "system",
                     "content": (
-                        "You are the quality officer on a competitive-intelligence "
-                        "research team (L3, decision tier). Review the analysis "
+                        (
+                            persona
+                            or "You are the quality officer on a competitive-"
+                            "intelligence research team (L3, decision tier).\n\n"
+                        )
+                        + "Review the analysis "
                         "work-in-progress below the way a managing editor or an "
                         "equity-research supervisory analyst would before sign-off.\n\n"
                         "Score each dimension 0-100 as an integer. Use the full range "
