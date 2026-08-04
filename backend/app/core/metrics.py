@@ -28,6 +28,8 @@ def compute_report_metrics(
     tokens_used: int,
     rework_rounds: int = 0,
     issues_resolved: int = 0,
+    verify_rounds: int = 0,
+    verify_issues_fixed: int = 0,
 ) -> Dict[str, Any]:
     indep_domains = len(
         {
@@ -98,6 +100,10 @@ def compute_report_metrics(
             "correction_rate": None,     # injected from reader feedback
             "rework_rounds": rework_rounds,
             "issues_resolved": issues_resolved,
+            # Post-write verification: defects found in the finished document and
+            # repaired or rewritten before it shipped.
+            "verify_rounds": verify_rounds,
+            "verify_issues_fixed": verify_issues_fixed,
             "formula": (
                 "accuracy = high-confidence claims / total claims; "
                 "correction rate = edited blocks / editable blocks (updated after feedback)"

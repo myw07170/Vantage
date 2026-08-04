@@ -193,6 +193,8 @@ export interface ReportSection {
   structured?: StructuredBlock | null
   data_grid?: DataGrid | null
   refined?: boolean
+  /** Rewritten by the verify stage after a defect was found in the first draft. */
+  rewritten?: boolean
 }
 
 export interface ReportMetrics {
@@ -247,6 +249,40 @@ export interface AuditReview {
   issues_resolved?: number
 }
 
+/* ── Post-write verification ─────────────────────────────────────────────── */
+/** Keys match Finding in backend/app/core/verify.py. */
+export interface VerifyFinding {
+  finding_id: string
+  section_id: string
+  severity: 'cosmetic' | 'minor' | 'major'
+  kind: string
+  detail: string
+  fix?: string
+  auto_fixed?: boolean
+  raised_by?: string
+}
+
+export interface VerifyReview {
+  /** `pass` clean · `revised` defects found and dealt with · `flagged` some survived. */
+  verdict?: 'pass' | 'revised' | 'flagged'
+  scores?: Record<string, number>
+  review?: string
+  /** Still open at sign-off — surfaced rather than hidden. */
+  findings?: VerifyFinding[]
+  /** Repaired automatically during the check. */
+  fixed?: VerifyFinding[]
+  rewritten_sections?: string[]
+  rounds?: number
+  checks?: {
+    sections_checked?: number
+    paragraphs_checked?: number
+    citations_resolved?: number
+    citations_dropped?: number
+    auto_fixed?: number
+    open_findings?: number
+  }
+}
+
 export interface ReportFigure {
   src: string
   alt?: string
@@ -282,6 +318,7 @@ export interface Report {
   quality_before?: Record<string, unknown>
   quality_after?: Record<string, unknown>
   audit_review?: AuditReview
+  verify_review?: VerifyReview
   trace?: TraceSpan[]
 }
 

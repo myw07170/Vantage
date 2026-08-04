@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Check, X } from 'lucide-react'
 import type { HighlightColor } from '../store/annotationStore'
 
@@ -13,6 +13,64 @@ const MARK_CLS: Record<HighlightColor, string> = {
   ok: 'bg-ok/40',
   risk: 'bg-risk/40',
   info: 'bg-info/40',
+}
+
+/**
+ * Inline citation markers as the writer emits them: `[e_2a862152]`, or several
+ * ids in one bracket. The verify stage has already dropped any id that matches
+ * no evidence, so anything reaching here resolves.
+ */
+const CITE_RE = /\[(e_[0-9a-f]{4,20}(?:\s*,\s*e_[0-9a-f]{4,20})*)\]/gi
+
+/** Replace citation markers in a plain string with clickable source chips. */
+function renderCitations(
+  value: string,
+  evIndex: Map<string, number>,
+  onCite: (ids: string[]) => void,
+  keyPrefix: string,
+): React.ReactNode {
+  CITE_RE.lastIndex = 0
+  const out: React.ReactNode[] = []
+  let pos = 0
+  let m: RegExpExecArray | null
+  while ((m = CITE_RE.exec(value)) !== null) {
+    // An id this report does not carry stays as written rather than becoming a
+    // link that goes nowhere — reports written before the verify stage existed
+    // can still contain fabricated ones.
+    const ids = m[1]
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter((id) => evIndex.has(id))
+    if (ids.length === 0) continue
+    if (m.index > pos) out.push(value.slice(pos, m.index))
+    out.push(
+      <button
+        key={`${keyPrefix}-${m.index}`}
+        onClick={() => onCite(ids)}
+        title={`Jump to ${ids.length > 1 ? 'these sources' : 'this source'}`}
+        className="mx-0.5 rounded-chip bg-primary-tint px-1.5 align-super text-[10px] font-semibold leading-tight text-primary-deep transition-colors hover:bg-primary-soft/50"
+      >
+        {ids.map((id) => evIndex.get(id)).join(',')}
+      </button>,
+    )
+    pos = m.index + m[0].length
+  }
+  if (out.length === 0) return value
+  if (pos < value.length) out.push(value.slice(pos))
+  return out
+}
+
+/** Read-only prose with its citation markers turned into source chips. */
+export function VCitedText({
+  text,
+  evIndex,
+  onCite,
+}: {
+  text: string
+  evIndex: Map<string, number>
+  onCite: (ids: string[]) => void
+}) {
+  return <>{renderCitations(text, evIndex, onCite, 'ct')}</>
 }
 
 /** Slice the paragraph against saved highlights and wrap the matches in <mark>. */
@@ -72,6 +130,8 @@ export function VEditableBlock({
   className = '',
   as = 'p',
   highlights,
+  evIndex,
+  onCite,
 }: {
   value: string
   editable: boolean
@@ -79,6 +139,9 @@ export function VEditableBlock({
   className?: string
   as?: 'p' | 'div'
   highlights?: InlineHighlight[]
+  /** evidence_id → its number in the report's source list. Enables citation chips. */
+  evIndex?: Map<string, number>
+  onCite?: (ids: string[]) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
@@ -138,8 +201,19 @@ export function VEditableBlock({
   }
 
   const Tag = as
-  const content =
+  // Highlights first, then citations over whatever plain text is left, so a
+  // reader's highlight and a source chip can coexist in the same sentence.
+  let content: React.ReactNode =
     highlights && highlights.length > 0 ? renderWithHighlights(value, highlights) : value
+  if (evIndex && onCite) {
+    const cite = (node: React.ReactNode, key: string) =>
+      typeof node === 'string' ? renderCitations(node, evIndex, onCite, key) : node
+    content = Array.isArray(content) ? (
+      content.map((n, i) => <Fragment key={i}>{cite(n, `c${i}`)}</Fragment>)
+    ) : (
+      cite(content, 'c0')
+    )
+  }
   return (
     <Tag
       className={`${className} ${

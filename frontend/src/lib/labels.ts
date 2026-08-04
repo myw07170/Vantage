@@ -15,6 +15,7 @@ export const STAGE_LABEL: Record<string, string> = {
   analyze: 'Analyze',
   write: 'Write',
   audit: 'Review',
+  verify: 'Verify',
   done: 'Deliver',
 }
 

@@ -48,6 +48,7 @@ never blocks while a page is being fetched or a model is thinking.
 | `sentiment.py` | Sentiment classification, opinion camps, representative quotes. |
 | `credibility.py` | Deterministic 0-100 evidence scoring. No model involved. |
 | `audit.py` | Quality evaluation, the LLM reviewer, and rework routing. |
+| `verify.py` | Post-write checks on the finished document: citation validation, formatting repair, editorial review, rewrite routing. |
 | `schemas.py` | Tolerant coercion into feature tree / pricing / persona, with citation filtering. |
 | `metrics.py` | Impact metrics, each with its formula. |
 | `charts.py` | ECharts option builders. |
@@ -57,13 +58,16 @@ never blocks while a page is being fetched or a model is thinking.
 ## The pipeline
 
 ```
-intake → orchestrator → collect → analyze → audit ──pass──► write → done
-                          ▲                    │
-                          └──────rework────────┘
+intake → orchestrator → collect → analyze → audit ──pass──► write → verify → done
+                          ▲                    │                      │
+                          └──────rework────────┘                      │
+                                                  section rewrite ◄───┘
 ```
 
 Note that **audit runs before write**. Rework improves the analysis that gets
-written up, rather than rewriting prose around unchanged findings.
+written up, rather than rewriting prose around unchanged findings. **Verify runs
+after write**, on the document itself — the two gates answer different
+questions, and neither can answer the other's.
 
 | Stage | What happens |
 |---|---|
@@ -73,6 +77,7 @@ written up, rather than rewriting prose around unchanged findings.
 | **analyze** | Cross-validation into claims, plus the structured feature/pricing/persona objects. Sentiment is classified here. |
 | **audit** | Rule-based quality evaluation plus a model review that scores each dimension. Either passes or emits `REWORK` envelopes. |
 | **write** | Sections written in parallel, paced by the rate limiter. Charts built from real analysis output. |
+| **verify** | The finished prose is checked and repaired, then read as a whole for contradictions and unsupported claims. Failing sections are rewritten. |
 | **done** | Metrics computed, report assembled and persisted, traces saved, analyst stats updated. |
 
 ### Research modes
@@ -86,6 +91,8 @@ written up, rather than rewriting prose around unchanged findings.
 | Sections | 5 | 9 | 12 |
 | Rework rounds | 0 | 1 | 2 |
 | Min paragraphs/section | 3 | 5 | 7 |
+| Verify rounds | 1 | 1 | 2 |
+| Max section rewrites | 2 | 4 | 6 |
 
 ### Rework
 
@@ -100,6 +107,36 @@ After the loop, a second review runs. Improvement is measured as the maximum of
 three signals — rule-issue delta, reviewer-issue delta, and the number of score
 dimensions that went up — because the reviewer regenerates its issue list each
 round, which makes raw counts noisy.
+
+### Verification
+
+`verify.py` gates the artifact rather than the analysis, in two layers.
+
+**Rules, applied and repaired in code.** Every `[e_xxxx]` marker in the prose is
+resolved against the collected evidence: real ids are normalized and collected
+per section, ids matching nothing are removed. Leftover markdown, literal `\n`,
+doubled spacing and stray asterisks are stripped. Truncated paragraphs, the
+writer's failure placeholder, empty sections, duplicated paragraphs and
+impossible shares (a percentage over 100 in share context — growth rates are
+left alone) are recorded as findings.
+
+**A single editorial read.** One model call sees every section at once — the
+only stage that does — and looks for contradictions between sections,
+quantitative assertions with nothing behind them, hedged claims restated as
+fact, and repetition.
+
+**Remediation is rewriting, never rework.** Nothing goes back to collection or
+analysis: a section with one major finding, or two minor ones, is rewritten
+against the same evidence with its own defects named in the prompt. The new
+draft is re-checked and kept only if it is not mechanically worse than the one
+it replaces, so a regeneration cannot quietly degrade the report. Anything still
+open when the rewrite budget runs out ships as a visible `flagged` verdict with
+the findings listed — the report says what is wrong with it rather than hiding
+it.
+
+The sentiment section is checked but never rewritten: it is written from the
+computed sentiment table, so its figures are sourced by construction and it
+carries no inline citations by design.
 
 ## Model routing
 

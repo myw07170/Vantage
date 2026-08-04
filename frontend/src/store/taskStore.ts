@@ -38,13 +38,15 @@ export interface StreamMessage {
     issues?: unknown[]
   }
   mode?: string
-  // audit_review payload
+  // audit_review / verify_review payload
   stage?: string
   verdict?: string
   scores?: Record<string, number>
   review?: string
   issues?: string[]
   suggestions?: string[]
+  // verify_rewrite payload
+  sections?: string[]
 }
 
 const BASE_NODES: DAGNode[] = [
@@ -54,6 +56,7 @@ const BASE_NODES: DAGNode[] = [
   { id: 'analyze', label: 'Analyze', status: 'idle' },
   { id: 'write', label: 'Write', status: 'idle' },
   { id: 'audit', label: 'Review', status: 'idle' },
+  { id: 'verify', label: 'Verify', status: 'idle' },
   { id: 'done', label: 'Deliver', status: 'idle' },
 ]
 

@@ -31,11 +31,12 @@ The point is not that it writes quickly. The point is that you can check it.
 | | |
 |---|---|
 | **Multi-agent team** | 48 specialists across three tiers (decision / strategy / execution). A director picks the right team for each brief. |
-| **Deep Research pipeline** | `intake → orchestrator → collect → analyze → write → audit → done`, with a rework loop that actually fires |
+| **Deep Research pipeline** | `intake → orchestrator → collect → analyze → audit → write → verify → done`, with a rework loop that actually fires |
 | **Real web collection** | Multi-angle search, full-text extraction, relevance and garbled-text filtering |
 | **Structured knowledge** | Feature trees, pricing models and user personas as typed objects, rendered as matrices, tables and cards |
 | **Computed credibility** | 0-100 per source from type, domain authority, recency and fetch quality — not a hardcoded number |
 | **Measured impact** | Time saved, source coverage, consistency and accuracy, each shipped with the formula that produced it |
+| **Verified before delivery** | Every inline citation is resolved against real evidence; the finished report is read as a whole for contradictions and unsupported claims, and failing sections are rewritten |
 | **Full trace** | Every agent's prompt, output, token cost and decision, queryable and replayable |
 | **Annotation-driven follow-up** | Highlight a passage, add a note, and re-research just that section |
 | **Three depths** | Quick / Deep / Expert, scaling search volume, section count and rework rounds |
@@ -48,6 +49,9 @@ These are enforced in code, not just documented:
 
 1. **No claim without evidence.** A conclusion with no sources is marked
    `unverified`, never asserted. ([`models.make_claim`](backend/app/core/models.py))
+   The same rule reaches the prose: a citation in the finished text that matches
+   no collected source is removed before delivery.
+   ([`verify.check_sections`](backend/app/core/verify.py))
 2. **Cross-validation.** High confidence requires two or more *independent
    domains*. Two citations from the same site is corroboration, not
    verification.
@@ -83,7 +87,8 @@ Architecture and data flow: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ```
 .
 ├── backend/app/
-│   ├── core/            # orchestration, LLM, search, fetching, credibility, trace
+│   ├── core/            # orchestration, LLM, search, fetching, credibility,
+│   │                    #   audit, verify, trace
 │   │   └── search/      # provider chain: exa / tavily / ddg
 │   ├── data/            # experts.json — the 48-analyst roster
 │   └── main.py          # FastAPI entry point

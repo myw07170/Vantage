@@ -17,6 +17,7 @@ const STAGES = [
   'analyze',
   'write',
   'audit',
+  'verify',
   'done',
 ]
 

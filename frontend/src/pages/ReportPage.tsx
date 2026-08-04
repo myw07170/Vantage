@@ -31,11 +31,12 @@ import { VChart } from '../components/VChart'
 import { VClaimCard } from '../components/VClaimCard'
 import { VSentimentPanel } from '../components/VSentimentPanel'
 import { VEvidenceCard } from '../components/VEvidenceFeed'
-import { VEditableBlock } from '../components/VEditableBlock'
+import { VEditableBlock, VCitedText } from '../components/VEditableBlock'
 import { VSelectionToolbar } from '../components/VSelectionToolbar'
 import { VMetricsPanel } from '../components/VMetricsPanel'
 import { VQualityGate } from '../components/VQualityGate'
 import { VAuditReview } from '../components/VAuditReview'
+import { VVerifyReport } from '../components/VVerifyReport'
 import { VDecisionReplay } from '../components/VDecisionReplay'
 import { VDataGrid } from '../components/VDataGrid'
 import { VFeatureMatrix, VPricingTable, VPersonaCards } from '../components/VStructured'
@@ -424,6 +425,7 @@ export default function ReportPage() {
 
           <VMetricsPanel metrics={r.metrics} />
           <VAuditReview review={r.audit_review} />
+          <VVerifyReport review={r.verify_review} />
           <VQualityGate before={r.quality_before} after={r.quality_after} />
 
           {r.sections.map((sec, idx) => (
@@ -438,6 +440,14 @@ export default function ReportPage() {
                   {idx + 1}
                 </span>
                 <h2 className="font-serif text-h2 text-ink">{sec.title}</h2>
+                {sec.rewritten && (
+                  <span
+                    title="Verification found a defect in the first draft; this section was rewritten against the same evidence."
+                    className="mt-1.5 shrink-0 rounded-chip bg-primary-tint px-2 py-0.5 text-tag font-medium text-primary-deep"
+                  >
+                    Rewritten after verification
+                  </span>
+                )}
               </div>
 
               {sec.key_takeaway && (
@@ -449,6 +459,8 @@ export default function ReportPage() {
                     editable={editMode}
                     onSave={(t) => setEdit(rid, `${sec.id}-takeaway`, t)}
                     className="text-body font-medium text-ink"
+                    evIndex={evIndex}
+                    onCite={jumpToEvidence}
                   />
                 </div>
               )}
@@ -463,6 +475,8 @@ export default function ReportPage() {
                     onSave={(t) => setEdit(rid, `${sec.id}-p${i}`, t)}
                     className="text-body leading-relaxed text-ink-2"
                     highlights={reportHls.filter((h) => h.sectionId === sec.id)}
+                    evIndex={evIndex}
+                    onCite={jumpToEvidence}
                   />
                 ))}
               </div>
@@ -472,7 +486,9 @@ export default function ReportPage() {
                   {sec.highlights.map((h, i) => (
                     <li key={i} className="flex gap-2 text-aux text-ink-2">
                       <Sparkles size={15} className="mt-0.5 shrink-0 text-warn" />
-                      <span>{h}</span>
+                      <span>
+                        <VCitedText text={h} evIndex={evIndex} onCite={jumpToEvidence} />
+                      </span>
                     </li>
                   ))}
                 </ul>

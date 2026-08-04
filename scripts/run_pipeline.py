@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 
@@ -157,6 +158,22 @@ async def main() -> int:
         )
     )
     checks.append(("trace spans recorded", len(rep.get("trace", [])) > 0, len(rep.get("trace", []))))
+
+    # The verify stage's contract: it ran, and nothing in the delivered prose
+    # cites an evidence id the report does not carry.
+    ev_ids = {e["evidence_id"] for e in evidence}
+    stray = []
+    for s in sections:
+        blocks = list(s.get("paragraphs") or []) + list(s.get("highlights") or [])
+        blocks.append(s.get("key_takeaway") or "")
+        for b in blocks:
+            for group in re.findall(r"\[([^\[\]\n]{1,240})\]", b):
+                for tok in (t.strip() for t in group.split(",")):
+                    if tok.startswith("e_") and tok not in ev_ids:
+                        stray.append((s["id"], tok))
+    vrev = rep.get("verify_review") or {}
+    checks.append(("verify stage ran", bool(vrev.get("checks")), vrev.get("verdict", "")))
+    checks.append(("no prose cites an unknown evidence id", not stray, stray[:5]))
     checks.append(
         (
             "at least one brand has 2+ independent domains",
@@ -180,6 +197,11 @@ async def main() -> int:
     print(f"sentiment sample: {rep.get('sentiment', {}).get('sample_size', 0)}")
     print(f"rework:   {rep.get('audit_review', {}).get('rework_rounds', 0)} round(s), "
           f"{rep.get('audit_review', {}).get('issues_resolved', 0)} issue(s) resolved")
+    vc = vrev.get("checks", {})
+    print(f"verify:   {vrev.get('verdict','-')} — {vc.get('citations_resolved',0)} citations "
+          f"resolved, {vc.get('citations_dropped',0)} dropped, "
+          f"{vc.get('auto_fixed',0)} auto-fixed, {vc.get('open_findings',0)} open, "
+          f"{len(vrev.get('rewritten_sections') or [])} section(s) rewritten")
     print(f"metrics:  {m.get('efficiency', {}).get('efficiency_multiple')}x efficiency, "
           f"{m.get('coverage', {}).get('independent_sources')} independent sources")
     print(f"saved:    {out_path}")

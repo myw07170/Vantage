@@ -1,7 +1,7 @@
 """Deep Research orchestration engine.
 
-Pipeline: intake -> orchestrator -> collect -> analyze -> write -> audit
-          -> (pass / rework) -> done
+Pipeline: intake -> orchestrator -> collect -> analyze -> audit
+          -> (pass / rework) -> write -> verify -> done
 
 Operating principles:
 
@@ -57,6 +57,16 @@ from app.core.schemas import (
 from app.core.search import multi_search
 from app.core.sentiment import analyze_sentiment
 from app.core.textquality import is_relevant_content
+from app.core.verify import (
+    LLM_KINDS,
+    check_sections,
+    llm_report_review,
+    merge_llm_findings,
+    rewrite_directive,
+    score_findings,
+    sections_to_rewrite,
+    verdict_of,
+)
 from app.data import expert_by_id, load_experts
 
 _settings = get_settings()
@@ -82,6 +92,7 @@ MODE_CONFIG = {
         "min_paragraphs": 3, "para_words": "90-150", "section_max_tokens": 3500,
         "analyze_max_tokens": 6000, "structured_max_tokens": 6000,
         "sentiment_brands": 2, "platform_take": 5,
+        "verify_rounds": 1, "verify_max_rewrites": 2,
     },
     "deep": {
         "label": "Deep",
@@ -92,6 +103,7 @@ MODE_CONFIG = {
         "min_paragraphs": 5, "para_words": "130-200", "section_max_tokens": 6000,
         "analyze_max_tokens": 8000, "structured_max_tokens": 8000,
         "sentiment_brands": 3, "platform_take": 8,
+        "verify_rounds": 1, "verify_max_rewrites": 4,
     },
     "expert": {
         "label": "Expert",
@@ -103,6 +115,7 @@ MODE_CONFIG = {
         "min_paragraphs": 7, "para_words": "180-300", "section_max_tokens": 9000,
         "analyze_max_tokens": 9000, "structured_max_tokens": 9000,
         "sentiment_brands": 4, "platform_take": 10,
+        "verify_rounds": 2, "verify_max_rewrites": 6,
     },
 }
 
@@ -204,6 +217,24 @@ def refine_section(
                 hl = data.get("highlights")
                 if isinstance(hl, list):
                     target["highlights"] = [str(h) for h in hl if str(h).strip()]
+                # This prose never passes through the verify stage, so run the
+                # same citation and formatting checks here — otherwise a deepened
+                # section is the one place a fabricated id could still reach the
+                # reader.
+                sid = target.get("id", section_id)
+                cleaned, vr = check_sections(
+                    {sid: target},
+                    {sid: target.get("title", sid)},
+                    {e.get("evidence_id") for e in evidence},
+                    min_paragraphs=1,
+                    inline_citation_exempt={sid},
+                )
+                target.update(cleaned[sid])
+                src = list(target.get("source_evidence_ids") or [])
+                for eid in vr.citations.get(sid, []):
+                    if eid not in src:
+                        src.append(eid)
+                target["source_evidence_ids"] = src
                 target["refined"] = True
                 db.save_report(rep, task_id="")
                 return {"ok": True, "section": target}
@@ -576,6 +607,7 @@ DAG_NODES = [
     {"id": "analyze", "label": "Analyze"},
     {"id": "write", "label": "Write"},
     {"id": "audit", "label": "Review"},
+    {"id": "verify", "label": "Verify"},
     {"id": "done", "label": "Deliver"},
 ]
 
@@ -1511,7 +1543,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         )
         yield _ev(
             "progress",
-            prog(70 + int(16 * done_count / total), "write", len(evidences),
+            prog(70 + int(12 * done_count / total), "write", len(evidences),
                  queued=total - done_count),
         )
 
@@ -1529,10 +1561,217 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     for ch in chart_specs:
         yield _ev("chart", ch)
         await asyncio.sleep(0.05)
-    yield _ev("progress", prog(90, "write", len(evidences)))
+    yield _ev("progress", prog(84, "write", len(evidences)))
     yield _ev("node_update", {"node": "write", "status": "done"})
 
-    # ---- 7. done ----
+    # ---- 7. verify (checks the document that came out, not the analysis) ----
+    verifier = next((m["id"] for m in dispatch["members"] if m["id"] == "L3-003"), "L3-003")
+    yield _ev("node_update", {"node": "verify", "status": "working", "expert": verifier})
+    yield _ev(
+        "thought",
+        {
+            "id": _sid("th"), "kind": "reflect", "expert": verifier,
+            "text": "Proofing the written report: validating every inline citation "
+                    "against the collected evidence, then reading the sections "
+                    "against each other for contradictions and unsupported claims.",
+            "ts": _now(),
+        },
+    )
+
+    valid_evidence_ids = {e.evidence_id for e in evidences}
+    section_titles = dict(SECTION_PLAN)
+    section_titles["sentiment"] = "User Sentiment and Opinion Camps"
+    # The sentiment narrative is checked alongside the rest but never rewritten:
+    # it is written from the sentiment tables, not from `_write_single_section`.
+    rewritable = set(section_ids)
+    verify_order = list(section_ids)
+    checked_input = dict(sections_text)
+    section_notes: Dict[str, str] = {}
+    if sentiment_text.get("paragraphs"):
+        checked_input["sentiment"] = sentiment_text
+        verify_order.append("sentiment")
+        # Its figures are computed from the collected comments, not asserted by
+        # a model, and every quote is rendered with its link. Without this the
+        # reviewer reads them as unsourced numbers on every single run.
+        section_notes["sentiment"] = (
+            "Written from the computed sentiment table over "
+            f"{sentiment.get('sample_size', 0)} real comments collected in this "
+            "run. Its counts and percentages are arithmetic over those comments, "
+            "each of which is rendered with its source link, so they are sourced "
+            "by construction and carry no inline evidence ids."
+        )
+
+    cleaned, vr = await asyncio.to_thread(
+        check_sections, checked_input, section_titles, valid_evidence_ids,
+        min_paragraphs=cfg["min_paragraphs"],
+        inline_citation_exempt={"sentiment"},
+    )
+    for sid, st in cleaned.items():
+        if sid == "sentiment":
+            sentiment_text = {**sentiment_text, **st}
+        else:
+            sections_text[sid] = {**sections_text.get(sid, {}), **st}
+    yield _ev(
+        "thought",
+        {
+            "id": _sid("th"), "kind": "finding", "expert": verifier,
+            "text": f"Automated checks over {vr.counters.get('sections_checked', 0)} "
+                    f"sections and {vr.counters.get('paragraphs_checked', 0)} "
+                    f"paragraphs: {vr.counters.get('citations_kept', 0)} inline "
+                    f"citations resolved to real evidence, "
+                    f"{vr.counters.get('citations_dropped', 0)} unresolvable "
+                    f"marker(s) removed, {len(vr.fixed)} defect(s) repaired in place.",
+            "ts": _now(),
+        },
+    )
+    yield _ev("progress", prog(87, "verify", len(evidences)))
+
+    trace.set_context(task_id, verifier, "verify", "Verify the written report")
+    verify_review = await asyncio.to_thread(
+        llm_report_review, query, brands, cleaned, section_titles, verify_order,
+        claims, vr, _model("aux"), section_notes,
+    )
+    for e in _drain_trace():
+        yield e
+    editorial_findings = merge_llm_findings(vr, verify_review)
+    yield _ev(
+        "message",
+        {
+            "id": _sid("m"), "kind": "verify_review", "expert": verifier,
+            "verdict": verify_review.get("verdict"),
+            "scores": verify_review.get("scores", {}),
+            "review": verify_review.get("review", ""),
+            "issues": [f.detail for f in vr.open][:8],
+            "suggestions": [f.fix for f in vr.open if f.fix][:8],
+        },
+    )
+
+    rewritten: List[str] = []
+    verify_rounds_done = 0
+    rewrite_budget = cfg.get("verify_max_rewrites", 4)
+    for _ in range(cfg.get("verify_rounds", 1)):
+        if rewrite_budget <= 0:
+            break
+        targets = sections_to_rewrite(vr, rewritable=rewritable, limit=rewrite_budget)
+        if not targets:
+            break
+        verify_rounds_done += 1
+        yield _ev(
+            "message",
+            {
+                "id": _sid("m"), "kind": "verify_rewrite", "expert": verifier,
+                "reason": f"Verification found defects in {len(targets)} section"
+                          f"{'s' if len(targets) != 1 else ''} — rewriting "
+                          f"{', '.join(section_titles.get(s, s) for s, _ in targets)} "
+                          "against the same evidence.",
+                "sections": [section_titles.get(s, s) for s, _ in targets],
+            },
+        )
+
+        async def _rewrite_one(sid: str, findings):
+            title = section_titles.get(sid, sid)
+            model = _model("core") if sid in CORE_SECTIONS else _model("aux")
+            trace.set_context(
+                task_id, writer, "verify", f"Rewrite after verification: {title}"
+            )
+            prev = sections_text.get(sid, {})
+            draft = "\n".join(
+                [prev.get("key_takeaway", "")] + list(prev.get("paragraphs", []))
+            ).strip()
+            return sid, findings, await asyncio.to_thread(
+                _write_single_section, sid, title, query, brands, focus,
+                evidences, claims, analysis, model,
+                cfg["min_paragraphs"], cfg["para_words"], cfg["section_max_tokens"],
+                rewrite_directive(findings), draft,
+            )
+
+        jobs = [asyncio.create_task(_rewrite_one(sid, fs)) for sid, fs in targets]
+        for coro in asyncio.as_completed(jobs):
+            sid, findings, st = await coro
+            rewrite_budget -= 1
+            for e in _drain_trace():
+                yield e
+            title = section_titles.get(sid, sid)
+            # Re-run the same checks on the new draft and keep it only if it is
+            # not mechanically worse. A regenerated section is not automatically
+            # an improved one, and shipping a worse draft to look busy beats
+            # nothing. The comparison is deliberately limited to the rule
+            # findings: the reviewer's judgements cannot be re-scored without
+            # another read of the whole report, so a rewrite driven by them is
+            # accepted as long as it introduces no new mechanical defect, and
+            # anything the rules still catch stays open in the report.
+            new_clean, new_vr = await asyncio.to_thread(
+                check_sections, {sid: st}, section_titles, valid_evidence_ids,
+                min_paragraphs=cfg["min_paragraphs"], check_duplicates=False,
+                inline_citation_exempt={"sentiment"},
+            )
+            before_load = score_findings([f for f in findings if f.kind not in LLM_KINDS])
+            after_load = score_findings(new_vr.for_section(sid))
+            if after_load <= before_load and new_clean[sid]["paragraphs"]:
+                sections_text[sid] = {**sections_text.get(sid, {}), **new_clean[sid]}
+                # The old findings described a draft that no longer exists.
+                vr.replace_section(sid, new_vr)
+                editorial_findings = [
+                    f for f in editorial_findings if f.section_id != sid
+                ]
+                rewritten.append(sid)
+                yield _ev(
+                    "thought",
+                    {
+                        "id": _sid("th"), "kind": "finding", "expert": verifier,
+                        "text": f"\"{title}\" rewritten against "
+                                f"{len(findings)} finding(s); the new draft "
+                                f"carries no new defects (load {before_load} → "
+                                f"{after_load}). Accepted.",
+                        "ts": _now(),
+                    },
+                )
+            else:
+                yield _ev(
+                    "thought",
+                    {
+                        "id": _sid("th"), "kind": "reflect", "expert": verifier,
+                        "text": f"\"{title}\" rewrite came back worse than the "
+                                f"original (defect load {before_load} → "
+                                f"{after_load}); keeping the first draft and "
+                                "reporting the issue instead.",
+                        "ts": _now(),
+                    },
+                )
+        yield _ev("progress", prog(91, "verify", len(evidences)))
+
+    verify_verdict = verdict_of(vr, verify_review)
+    verify_result = {
+        "verdict": verify_verdict,
+        "scores": verify_review.get("scores", {}),
+        "review": verify_review.get("review", ""),
+        "findings": [f.to_dict() for f in vr.open],
+        "fixed": [f.to_dict() for f in vr.fixed],
+        "rewritten_sections": [section_titles.get(s, s) for s in rewritten],
+        "rounds": verify_rounds_done,
+        "checks": vr.summary(),
+    }
+    yield _ev(
+        "thought",
+        {
+            "id": _sid("th"), "kind": "reflect", "expert": verifier,
+            "text": {
+                "pass": "Verification passed: citations resolve, sections agree "
+                        "with each other, and every verdict traces to evidence.",
+                "revised": f"Verification complete: {len(vr.fixed)} defect(s) "
+                           f"repaired, {len(rewritten)} section(s) rewritten. "
+                           "Nothing major outstanding.",
+                "flagged": f"Verification complete with {len(vr.majors)} unresolved "
+                           "issue(s). They are recorded in the report rather than "
+                           "papered over.",
+            }[verify_verdict],
+            "ts": _now(),
+        },
+    )
+    yield _ev("node_update", {"node": "verify", "status": "done"})
+    yield _ev("progress", prog(94, "verify", len(evidences)))
+
+    # ---- 8. done ----
     yield _ev("node_update", {"node": "done", "status": "working", "expert": dispatch["lead"]})
     yield _ev("progress", prog(95, "done", len(evidences)))
 
@@ -1542,6 +1781,8 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         brands=brands, focus=focus, claims=claims, evidences=evidences,
         structured=structured, elapsed_seconds=elapsed, tokens_used=tokens_used,
         rework_rounds=rework_rounds_done, issues_resolved=issues_resolved,
+        verify_rounds=verify_rounds_done,
+        verify_issues_fixed=len(vr.fixed) + len(rewritten),
     )
     metrics = merge_quality_into_metrics(metrics, quality_after.to_dict())
 
@@ -1551,11 +1792,13 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         chart_specs, sections_text, collect_notes, analysis, metrics,
         quality_before.to_dict(), quality_after.to_dict(), trace_spans, mode,
         section_ids, sentiment_text,
+        cited_by_section=vr.citations, rewritten_sections=set(rewritten),
     )
     report["audit_review"] = {
         "before": review_before, "after": review_after,
         "rework_rounds": rework_rounds_done, "issues_resolved": issues_resolved,
     }
+    report["verify_review"] = verify_result
     db.save_report(report, task_id=task_id)
     db.save_traces(task_id, report["id"], trace_spans)
     db.mark_task_done(task_id, report["id"])
@@ -1923,9 +2166,15 @@ SECTION_PROMPTS = {
 def _write_single_section(
     sid: str, title: str, query, brands, focus, evidences, claims, analysis,
     model: str, min_paragraphs: int = 5, para_words: str = "130-200",
-    section_max_tokens: int = 6000,
+    section_max_tokens: int = 6000, fix_directive: str = "",
+    previous_draft: str = "",
 ) -> Dict[str, Any]:
-    """Write one section. Independent token budget, so a failure is isolated."""
+    """Write one section. Independent token budget, so a failure is isolated.
+
+    `fix_directive` carries the verify stage's findings for a rewrite. It names
+    the defects in this section specifically, so the second attempt corrects
+    them rather than rolling the dice on the same prompt again.
+    """
     field_map = {
         "summary": ["overview", "feature_tree", "pricing_model"],
         "overview": ["overview"],
@@ -1979,6 +2228,19 @@ def _write_single_section(
         extra += f"\nPersonas: {json.dumps(structured['user_persona'][:2])[:800]}"
 
     section_role = SECTION_PROMPTS.get(sid, "An in-depth competitive analysis section.")
+    fix_block = ""
+    previous_block = ""
+    if fix_directive and previous_draft:
+        previous_block = f"The draft you are correcting:\n{previous_draft[:4000]}\n\n"
+    if fix_directive:
+        fix_block = (
+            "\n\n[REWRITE — verification found defects in the previous draft of "
+            "this exact section. Fix each one; do not reproduce them.]\n"
+            + fix_directive
+            + "\n\nRewrite the section in full. Keep what was sound, correct what "
+            "was not, and drop any assertion you cannot tie to the evidence below "
+            "rather than restating it with softer wording."
+        )
     try:
         data = chat_json(
             [
@@ -2009,9 +2271,12 @@ def _write_single_section(
                         "contrasts or non-obvious insights, one sentence each.\n"
                         "6. Cite as you go. After a key conclusion, mark the "
                         "supporting evidence id in square brackets like [e_xxxx], "
-                        "using only real ids from the material below.\n\n"
+                        "using only real ids from the material below. An id that "
+                        "is not in the material is a fabricated citation and will "
+                        "be stripped from the report.\n\n"
                         'Return JSON: {"paragraphs":["..."],'
                         '"key_takeaway":"...","highlights":["..."]}'
+                        + fix_block
                     ),
                 },
                 {
@@ -2022,14 +2287,19 @@ def _write_single_section(
                         f"Competitors: {', '.join(brands)}\n"
                         f"Focus: {', '.join(focus)}\n"
                         f"Related claims (with supporting evidence ids):\n{claim_text}\n{extra}\n\n"
+                        f"{previous_block}"
                         f"Evidence:\n{digest}"
                     ),
                 },
             ],
             max_tokens=section_max_tokens,
-            temperature=0.7,
+            temperature=0.7 if not fix_directive else 0.5,
             model=model,
-            purpose=f"Write section: {title}",
+            purpose=(
+                f"Rewrite section after verification: {title}"
+                if fix_directive
+                else f"Write section: {title}"
+            ),
         )
         if isinstance(data, dict):
             paras = data.get("paragraphs")
@@ -2442,7 +2712,9 @@ def _xml_escape(text: str) -> str:
 def _assemble_report(
     query, brands, focus, dispatch, claims, evidences, images, sentiment, charts,
     sections_text, collect_notes, analysis, metrics, quality_before, quality_after,
-    trace_spans, mode, section_ids, sentiment_text=None,
+    trace_spans, mode, section_ids, sentiment_text=None, *,
+    cited_by_section: Optional[Dict[str, List[str]]] = None,
+    rewritten_sections: Optional[set] = None,
 ) -> Dict[str, Any]:
     rid = _sid("r")
     members = [m["id"] for m in dispatch["members"]]
@@ -2496,6 +2768,10 @@ def _assemble_report(
             src.extend(c.get("evidence_ids", []))
         for ch in sec_charts:
             src.extend(ch.get("evidence_ids", []))
+        # Evidence the prose cites inline but no claim or chart carries. The
+        # verify stage resolved these against the real evidence set, so they
+        # belong in the section's source list too.
+        src.extend((cited_by_section or {}).get(sid, []))
         seen = set()
         src = [x for x in src if not (x in seen or seen.add(x))]
         sec = {
@@ -2508,6 +2784,7 @@ def _assemble_report(
             "source_evidence_ids": src,
             "structured": None,
             "data_grid": None,
+            "rewritten": sid in (rewritten_sections or set()),
         }
         structured = analysis.get("structured") or {}
         if sid == "feature" and structured.get("feature_tree"):
@@ -2560,7 +2837,8 @@ def _assemble_report(
         "key_takeaway": sent_takeaway,
         "highlights": [h for h in st.get("highlights", []) if str(h).strip()],
         "paragraphs": sent_paras,
-        "claims": [], "charts": sent_charts, "source_evidence_ids": [],
+        "claims": [], "charts": sent_charts,
+        "source_evidence_ids": list((cited_by_section or {}).get("sentiment", [])),
         "structured": None, "data_grid": None,
     }
     insert_at = len(sections)
