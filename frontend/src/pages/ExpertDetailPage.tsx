@@ -66,7 +66,7 @@ export default function ExpertDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-serif text-h1 text-ink">{expert.name}</h1>
             <span
-              className="inline-flex h-6 items-center rounded-chip px-2.5 text-tag font-medium text-ink-2"
+              className="inline-flex h-6 items-center rounded-chip px-2.5 text-tag font-medium text-ink"
               style={{ background: expert.badge_color }}
             >
               {expert.level}

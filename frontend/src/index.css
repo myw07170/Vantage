@@ -12,33 +12,38 @@
  * that need a raw value rather than a Tailwind class (D3 scales, inline SVG).
  */
 :root {
-  --v-primary: 124 152 133;
-  --v-primary-soft: 168 192 168;
-  --v-primary-tint: 234 241 234;
-  --v-primary-deep: 87 115 95;
-  --v-primary-deeper: 76 100 83;
+  /* Slate indigo. The primary is a cool blue at ~215deg; `sun` is deliberately
+     the only warm tone left, which is what keeps tier badges and the hero glow
+     reading as an accent instead of as more brand colour. */
+  --v-primary: 91 115 150;
+  --v-primary-soft: 147 166 192;
+  --v-primary-tint: 233 237 243;
+  --v-primary-deep: 85 107 140;
+  --v-primary-deeper: 76 96 125;
 
-  --v-sun: 244 226 184;
-  --v-sun-soft: 251 246 233;
+  --v-sun: 232 196 143;
+  --v-sun-soft: 250 242 230;
 
-  --v-ink: 58 65 60;
-  --v-ink-2: 88 95 89;
-  --v-ink-3: 105 115 107;
-  --v-line: 227 232 227;
-  --v-bg: 250 251 249;
+  --v-ink: 51 58 66;
+  --v-ink-2: 87 93 102;
+  --v-ink-3: 103 111 122;
+  --v-line: 226 230 236;
+  --v-bg: 249 250 251;
   --v-card: 255 255 255;
-  --v-paper: 244 246 243;
+  --v-paper: 242 244 247;
 
   /* Base tone = the tinted pill behind a chip. `-deep` = the ink on it, same
-     hue, dark enough to clear 4.5:1 against that pill. */
-  --v-ok: 138 181 138;
-  --v-ok-deep: 77 121 77;
-  --v-warn: 224 183 117;
-  --v-warn-deep: 148 104 33;
-  --v-risk: 206 154 146;
-  --v-risk-deep: 164 86 73;
-  --v-info: 143 168 192;
-  --v-info-deep: 80 112 143;
+     hue, dark enough to clear 4.5:1 against that pill.
+     `info` is violet rather than blue: against a slate primary the old blue
+     sat 5deg away and read as a slightly-wrong brand colour. */
+  --v-ok: 127 168 140;
+  --v-ok-deep: 79 116 91;
+  --v-warn: 221 175 107;
+  --v-warn-deep: 146 101 34;
+  --v-risk: 201 144 137;
+  --v-risk-deep: 165 85 75;
+  --v-info: 163 121 200;
+  --v-info-deep: 135 81 183;
 
   --v-primary-color: rgb(var(--v-primary));
   --v-primary-deep-color: rgb(var(--v-primary-deep));
@@ -53,8 +58,8 @@
   --r-btn: 12px;
   --r-chip: 999px;
 
-  --shadow-card: 0 4px 24px rgba(124, 152, 133, 0.08);
-  --shadow-float: 0 8px 40px rgba(124, 152, 133, 0.14);
+  --shadow-card: 0 4px 24px rgb(var(--v-primary) / 0.08);
+  --shadow-float: 0 8px 40px rgb(var(--v-primary) / 0.14);
 
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
 }

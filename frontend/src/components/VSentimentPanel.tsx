@@ -12,7 +12,12 @@ const SENT_CLS: Record<string, string> = {
 
 function platformChip(platform: string) {
   const style = PLATFORM_STYLE[platform]
-  if (!style) return { dot: '#9AA39C', bg: 'rgba(154,163,156,0.12)', fg: '#6B746C' }
+  if (!style)
+    return {
+      dot: 'var(--v-ink-3-color)',
+      bg: 'rgb(var(--v-ink-3) / 0.12)',
+      fg: 'var(--v-ink-color)',
+    }
   return { dot: style.bg, bg: `${style.bg}18`, fg: style.bg }
 }
 

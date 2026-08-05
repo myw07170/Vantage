@@ -106,7 +106,7 @@ export const PLATFORM_STYLE: Record<string, { bg: string; fg: string }> = {
   capterra: { bg: '#FF9D28', fg: '#FFFFFF' },
   youtube: { bg: '#FF0000', fg: '#FFFFFF' },
   x: { bg: '#0F1419', fg: '#FFFFFF' },
-  web: { bg: '#8FA8C0', fg: '#FFFFFF' },
+  web: { bg: '#6C7A8C', fg: '#FFFFFF' },
 }
 
 export const platformLabel = (p: string) => PLATFORM_LABEL[p] ?? p

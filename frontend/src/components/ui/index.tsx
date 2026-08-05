@@ -123,7 +123,7 @@ export function VSunGlow({ className = '' }: { className?: string }) {
         height: 520,
         top: -160,
         right: -120,
-        background: 'radial-gradient(circle, #F4E2B8 0%, rgba(244,226,184,0) 70%)',
+        background: 'radial-gradient(circle, rgb(var(--v-sun)) 0%, rgb(var(--v-sun) / 0) 70%)',
         opacity: 0.5,
         filter: 'blur(8px)',
       }}

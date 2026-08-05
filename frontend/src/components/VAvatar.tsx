@@ -12,13 +12,16 @@ import type { Expert } from '../types'
  * entry that has no portrait on disk.
  */
 
+// Spread around the palette rather than repeating the brand colour, so a wall
+// of monograms still reads as a set of distinct people. White initials sit on
+// top, so every stop stays dark enough to carry them.
 const GRADIENTS: [string, string][] = [
-  ['#7C9885', '#5E7A66'],
-  ['#8FA8C0', '#5E7A9B'],
-  ['#C2B59B', '#9B8C6E'],
-  ['#CE9A92', '#A8746C'],
-  ['#A8C0A8', '#7C9885'],
-  ['#B0A8C0', '#847AA0'],
+  ['#5B7396', '#3E5473'],
+  ['#7F92AD', '#556B8C'],
+  ['#A379C8', '#7A559E'],
+  ['#C99089', '#A5554B'],
+  ['#7FA88C', '#4F745B'],
+  ['#B8996A', '#8C6D3F'],
 ]
 
 /** The roster's id scheme, which is also the avatar filename. */

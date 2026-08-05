@@ -38,7 +38,7 @@ function ExpertCard({ expert, onClick }: { expert: Expert; onClick: () => void }
       className="group relative flex flex-col items-center rounded-card border border-line/60 bg-card p-4 text-center shadow-card transition-all hover:-translate-y-0.5 hover:shadow-float"
     >
       <span
-        className={`absolute right-2.5 top-2.5 inline-flex h-5 items-center gap-1 rounded-chip px-2 text-tag font-medium text-ink-2 ${
+        className={`absolute right-2.5 top-2.5 inline-flex h-5 items-center gap-1 rounded-chip px-2 text-tag font-medium text-ink ${
           LEVEL_BG[expert.level]
         }`}
       >

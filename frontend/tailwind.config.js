@@ -58,8 +58,8 @@ export default {
         chip: '999px',
       },
       boxShadow: {
-        card: '0 4px 24px rgba(124,152,133,0.08)',
-        float: '0 8px 40px rgba(124,152,133,0.14)',
+        card: '0 4px 24px rgb(var(--v-primary) / 0.08)',
+        float: '0 8px 40px rgb(var(--v-primary) / 0.14)',
         glow: '0 0 0 4px rgb(var(--v-primary) / 0.12)',
       },
       fontFamily: {
@@ -92,8 +92,8 @@ export default {
           to: { opacity: '1', transform: 'translateY(0)' },
         },
         glow: {
-          '0%,100%': { boxShadow: '0 0 0 0 rgba(124,152,133,.4)' },
-          '50%': { boxShadow: '0 0 0 8px rgba(124,152,133,0)' },
+          '0%,100%': { boxShadow: '0 0 0 0 rgb(var(--v-primary) / 0.4)' },
+          '50%': { boxShadow: '0 0 0 8px rgb(var(--v-primary) / 0)' },
         },
         shimmer: {
           '0%': { backgroundPosition: '-200% 0' },

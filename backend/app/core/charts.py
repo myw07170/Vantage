@@ -7,18 +7,23 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+# Mirrors the design tokens in frontend/src/index.css. ECharts options are built
+# here and rendered verbatim, so this is the one place chart colour cannot come
+# from a CSS variable — keep it in step when the theme changes.
 PALETTE = {
-    "primary": "#7C9885",
-    "sun": "#F4E2B8",
-    "info": "#8FA8C0",
-    "risk": "#CE9A92",
-    "soft": "#A8C0A8",
-    "ink": "#3A413C",
-    "ink2": "#6B746C",
-    "line": "#E3E8E3",
+    "primary": "#5B7396",
+    "sun": "#E8C48F",
+    "info": "#A379C8",
+    "risk": "#C99089",
+    "soft": "#93A6C0",
+    "ink": "#333A42",
+    "ink2": "#575D66",
+    "line": "#E2E6EC",
 }
-SERIES = ["#7C9885", "#E0B775", "#8FA8C0", "#CE9A92", "#A8C0A8", "#C2B59B"]
-SENTIMENT = {"pos": "#8AB58A", "neu": "#C9CFC9", "neg": "#CE9A92"}
+# Ordered for maximum separation between neighbours, since adjacent series are
+# what a reader has to tell apart.
+SERIES = ["#5B7396", "#DDAF6B", "#7FA88C", "#A379C8", "#C99089", "#93A6C0"]
+SENTIMENT = {"pos": "#7FA88C", "neu": "#C6CBD3", "neg": "#C99089"}
 SENTIMENT_LABEL = {"pos": "Positive", "neu": "Neutral", "neg": "Negative"}
 
 _BASE_TEXT = {
@@ -68,7 +73,7 @@ def feature_radar(
         "radar": {
             "indicator": indicator,
             "splitLine": _axis_line(),
-            "splitArea": {"areaStyle": {"color": ["#FAFBF9", "#FFFFFF"]}},
+            "splitArea": {"areaStyle": {"color": ["#F9FAFB", "#FFFFFF"]}},
             "axisName": {"color": PALETTE["ink2"]},
         },
         "series": [{"type": "radar", "data": data, "symbolSize": 5}],
@@ -260,7 +265,7 @@ def five_forces_radar(title: str, forces: Dict[str, Any]) -> Dict[str, Any]:
         "radar": {
             "indicator": indicator,
             "splitLine": _axis_line(),
-            "splitArea": {"areaStyle": {"color": ["#FAFBF9", "#FFFFFF"]}},
+            "splitArea": {"areaStyle": {"color": ["#F9FAFB", "#FFFFFF"]}},
             "axisName": {"color": PALETTE["ink2"], "fontSize": 11},
         },
         "series": [
