@@ -2,7 +2,6 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  ChevronLeft,
   Network,
   Download,
   BookOpen,
@@ -37,8 +36,9 @@ import { VMetricsPanel } from '../components/VMetricsPanel'
 import { VQualityGate } from '../components/VQualityGate'
 import { VAuditReview } from '../components/VAuditReview'
 import { VVerifyReport } from '../components/VVerifyReport'
-import { VDecisionReplay } from '../components/VDecisionReplay'
+import { VReportToc } from '../components/VReportToc'
 import { VDataGrid } from '../components/VDataGrid'
+import VSidebar from '../layout/VSidebar'
 import { VFeatureMatrix, VPricingTable, VPersonaCards } from '../components/VStructured'
 import { refineSection, submitFeedback } from '../lib/api'
 import { VSkeleton, VCountUp } from '../components/ui'
@@ -66,6 +66,9 @@ export default function ReportPage() {
   const { current, loading, error, load } = useReportStore()
   const [activeSection, setActiveSection] = useState<string>('')
   const [readProgress, setReadProgress] = useState(0)
+  // The floating contents rail sits in the left gutter, which the cover image
+  // spans; it fades in once the reader has scrolled past it.
+  const [pastCover, setPastCover] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [highlightedEv, setHighlightedEv] = useState<string[]>([])
   const [refiningSec, setRefiningSec] = useState<string>('')
@@ -94,6 +97,7 @@ export default function ReportPage() {
       const { scrollTop, scrollHeight, clientHeight } = el
       const max = scrollHeight - clientHeight
       setReadProgress(max > 0 ? Math.min(100, (scrollTop / max) * 100) : 0)
+      setPastCover(scrollTop > 180)
       let cur = ''
       for (const s of current.sections) {
         const node = document.getElementById(`sec-${s.id}`)
@@ -257,64 +261,10 @@ export default function ReportPage() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg">
-      {/* Table of contents */}
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-line bg-card/50 lg:flex">
-        <div className="flex h-14 items-center gap-2 border-b border-line px-5">
-          <button
-            onClick={() => navigate('/')}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-btn text-ink-2 hover:bg-primary-tint"
-            aria-label="Back"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <span className="text-aux font-semibold text-ink">Contents</span>
-        </div>
-        <div className="px-5 pt-3">
-          <div className="flex items-center justify-between text-tag text-ink-3">
-            <span>Reading progress</span>
-            <span>{Math.round(readProgress)}%</span>
-          </div>
-          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-chip bg-line">
-            <div
-              className="h-full rounded-chip bg-primary transition-all duration-150"
-              style={{ width: `${readProgress}%` }}
-            />
-          </div>
-        </div>
-        <nav className="flex-1 overflow-y-auto p-3">
-          {r.toc.map((t, i) => {
-            const active = activeSection === t.id
-            return (
-              <button
-                key={t.id}
-                onClick={() => jumpTo(t.id)}
-                className={`flex w-full items-start gap-2.5 rounded-btn px-3 py-2 text-left text-aux transition-colors ${
-                  active
-                    ? 'bg-primary-tint font-medium text-primary-deep'
-                    : 'text-ink-2 hover:bg-primary-tint/50'
-                }`}
-              >
-                <span
-                  className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-chip text-[11px] font-semibold transition-colors ${
-                    active ? 'bg-primary-deep text-white' : 'bg-line/70 text-ink-3'
-                  }`}
-                >
-                  {i + 1}
-                </span>
-                <span className="leading-snug">{t.title}</span>
-              </button>
-            )
-          })}
-        </nav>
-        <div className="border-t border-line p-3">
-          <button
-            onClick={() => navigate(`/graph/${r.id}`)}
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-btn bg-primary-tint px-3 text-aux font-medium text-primary-deep hover:bg-primary-soft/40"
-          >
-            <Network size={16} /> Evidence graph
-          </button>
-        </div>
-      </aside>
+      {/* The same rail as the rest of the app: a report is a place inside the
+          workspace, not a detour out of it. The contents that used to live here
+          now float in the article's left gutter. */}
+      <VSidebar />
 
       {/* Article */}
       <main ref={mainRef} className="min-w-0 flex-1 overflow-y-auto">
@@ -332,27 +282,37 @@ export default function ReportPage() {
             <div className="h-60 w-full bg-gradient-to-br from-primary to-primary-deep" />
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-ink/70 via-ink/20 to-transparent" />
-          <div className="absolute bottom-0 left-0 right-0 p-8">
-            <motion.h1
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="font-serif text-[32px] leading-tight text-white"
-            >
-              {r.title}
-            </motion.h1>
-            <p className="mt-2 max-w-2xl text-aux text-white/85">{r.subtitle}</p>
-            <div className="mt-3 flex flex-wrap items-center gap-4 text-tag text-white/75">
-              <span className="inline-flex items-center gap-1">
-                <Calendar size={13} /> {formatDate(r.created_at)}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Users size={13} /> {plural(r.experts.length, 'analyst')}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Quote size={13} /> {plural(r.claims.length, 'claim')} ·{' '}
-                {plural(r.evidence.length, 'source')}
-              </span>
+          <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-6 p-8">
+            <div className="min-w-0">
+              <motion.h1
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="font-serif text-[32px] leading-tight text-white"
+              >
+                {r.title}
+              </motion.h1>
+              <p className="mt-2 max-w-2xl text-aux text-white/85">{r.subtitle}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-4 text-tag text-white/75">
+                <span className="inline-flex items-center gap-1">
+                  <Calendar size={13} /> {formatDate(r.created_at)}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Users size={13} /> {plural(r.experts.length, 'analyst')}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Quote size={13} /> {plural(r.claims.length, 'claim')} ·{' '}
+                  {plural(r.evidence.length, 'source')}
+                </span>
+              </div>
             </div>
+            {/* Opposite corner from Saved / Trace / Edit / Export, so the title
+                bar carries the report's actions at both ends. */}
+            <button
+              onClick={() => navigate(`/graph/${r.id}`)}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-btn bg-card/90 px-3 text-aux font-medium text-ink-2 backdrop-blur transition-colors hover:text-primary-deep"
+            >
+              <Network size={15} /> Evidence graph
+            </button>
           </div>
           <div className="absolute right-6 top-6 flex flex-wrap items-center justify-end gap-2">
             <button
@@ -765,9 +725,15 @@ export default function ReportPage() {
         </div>
       </aside>
 
-      {r.trace && r.trace.length > 0 && (
-        <VDecisionReplay trace={r.trace} onHighlightEvidence={jumpToEvidence} />
-      )}
+      <VReportToc
+        items={r.toc}
+        activeId={activeSection}
+        progress={readProgress}
+        visible={pastCover}
+        onJump={jumpTo}
+        containerRef={mainRef}
+        articleRef={articleRef}
+      />
 
       {toast && (
         <div className="pointer-events-none fixed bottom-8 left-1/2 z-50 -translate-x-1/2">
