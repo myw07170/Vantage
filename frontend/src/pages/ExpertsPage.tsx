@@ -6,6 +6,7 @@ import { useExpertStore } from '../store/expertStore'
 import { DomainIcon } from '../components/DomainIcon'
 import { VAvatar } from '../components/VAvatar'
 import { VEmpty } from '../components/ui'
+import { ACCENT_CHIP, LEVEL_ACCENT } from '../lib/accents'
 import { fadeUp, stagger } from '../lib/motion'
 import type { Expert, ExpertLevel } from '../types'
 
@@ -22,12 +23,13 @@ const LEVEL_TABS: {
   { key: 'L1', label: 'Specialist', desc: (n) => `${n} · industry and function` },
 ]
 
-// These are the same three values as `badge_color` in experts.json, expressed
-// as tokens so the tier badges follow the palette rather than pinning it.
+// One accent per tier. Three tints of the same colour made the roster look
+// uniform; three hues make the decision, strategy and specialist tiers legible
+// at a glance across the grid.
 const LEVEL_BG: Record<ExpertLevel, string> = {
-  L1: 'bg-primary-tint',
-  L2: 'bg-sun-soft',
-  L3: 'bg-sun',
+  L1: ACCENT_CHIP[LEVEL_ACCENT.L1],
+  L2: ACCENT_CHIP[LEVEL_ACCENT.L2],
+  L3: ACCENT_CHIP[LEVEL_ACCENT.L3],
 }
 
 function ExpertCard({ expert, onClick }: { expert: Expert; onClick: () => void }) {
@@ -38,7 +40,7 @@ function ExpertCard({ expert, onClick }: { expert: Expert; onClick: () => void }
       className="group relative flex flex-col items-center rounded-card border border-line/60 bg-card p-4 text-center shadow-card transition-all hover:-translate-y-0.5 hover:shadow-float"
     >
       <span
-        className={`absolute right-2.5 top-2.5 inline-flex h-5 items-center gap-1 rounded-chip px-2 text-tag font-medium text-ink ${
+        className={`absolute right-2.5 top-2.5 inline-flex h-5 items-center gap-1 rounded-chip px-2 text-tag font-medium ${
           LEVEL_BG[expert.level]
         }`}
       >

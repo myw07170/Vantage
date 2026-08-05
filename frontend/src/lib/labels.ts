@@ -48,16 +48,21 @@ export const sourceLabel = (s: string) => SOURCE_LABEL[s] ?? s
  * most important signal.
  */
 export const SOURCE_STYLE: Record<string, string> = {
+  // First-hand documentation, in the brand colour: these are the sources the
+  // product is arguing you should trust most.
   official: 'bg-primary-tint text-primary-deep',
-  sec_filing: 'bg-primary-tint text-primary-deep',
-  analyst: 'bg-sun-soft text-warn-deep',
-  news: 'bg-sun-soft text-warn-deep',
-  review: 'bg-info/15 text-info-deep',
+  sec_filing: 'bg-teal/15 text-teal-deep',
+  // Commentary.
+  analyst: 'bg-violet/15 text-violet-deep',
+  news: 'bg-amber/15 text-amber-deep',
+  // User voice. The three platforms with strong brand colours keep them —
+  // recognising a Reddit badge at a glance beats palette purity.
+  review: 'bg-green/15 text-green-deep',
   reddit: 'bg-[#FDEDE8] text-[#9C3F1E]',
   hackernews: 'bg-[#FBF0E6] text-[#8A4A1F]',
   youtube: 'bg-[#FBEAEA] text-[#8E3532]',
   x: 'bg-[#EDEEF0] text-ink-2',
-  forum: 'bg-info/15 text-info-deep',
+  forum: 'bg-rose/15 text-rose-deep',
   web: 'bg-paper text-ink-2',
   unknown: 'bg-paper text-ink-2',
 }

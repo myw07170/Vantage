@@ -44,6 +44,7 @@ import { VAvatar } from '../components/VAvatar'
 import { fadeUp, stagger } from '../lib/motion'
 import { CATEGORY_LABEL, SOURCE_CATEGORY, sourceLabel } from '../lib/labels'
 import { num, plural } from '../lib/format'
+import { ACCENT_FILL, ACCENT_TEXT } from '../lib/accents'
 
 function fmtSaved(min: number): { value: number; unit: string } {
   if (min >= 60) return { value: Math.round((min / 60) * 10) / 10, unit: 'hours' }
@@ -51,9 +52,9 @@ function fmtSaved(min: number): { value: number; unit: string } {
 }
 
 const CATEGORY_COLOR: Record<string, string> = {
-  primary: 'bg-primary',
-  media: 'bg-info',
-  social: 'bg-sun',
+  primary: ACCENT_FILL.blue,
+  media: ACCENT_FILL.teal,
+  social: ACCENT_FILL.rose,
 }
 const CATEGORY_ORDER = ['primary', 'media', 'social'] as const
 
@@ -280,7 +281,7 @@ export default function DashboardPage() {
               <div className="mt-4 grid grid-cols-2 gap-5 sm:grid-cols-4">
                 <ImpactCard
                   icon={Clock}
-                  color="text-primary"
+                  color={ACCENT_TEXT.blue}
                   value={fmtSaved(stats!.minutes_saved ?? 0).value}
                   unit={fmtSaved(stats!.minutes_saved ?? 0).unit}
                   label="Analyst time saved"
@@ -288,7 +289,7 @@ export default function DashboardPage() {
                 />
                 <ImpactCard
                   icon={Zap}
-                  color="text-warn-deep"
+                  color={ACCENT_TEXT.amber}
                   value={stats!.avg_efficiency ?? 0}
                   unit="×"
                   label="Average speed-up"
@@ -296,7 +297,7 @@ export default function DashboardPage() {
                 />
                 <ImpactCard
                   icon={Layers}
-                  color="text-ok-deep"
+                  color={ACCENT_TEXT.teal}
                   value={stats!.avg_coverage ?? 0}
                   unit="×"
                   label="Source coverage"
@@ -304,7 +305,7 @@ export default function DashboardPage() {
                 />
                 <ImpactCard
                   icon={Activity}
-                  color="text-info-deep"
+                  color={ACCENT_TEXT.violet}
                   value={Math.round((stats!.total_tokens ?? 0) / 1000)}
                   unit="K"
                   label="Tokens used"

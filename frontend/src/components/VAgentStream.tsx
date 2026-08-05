@@ -4,14 +4,18 @@ import { Compass, Users, Settings, Lightbulb, Search, type LucideIcon } from 'lu
 import type { ThoughtItem, ThoughtKind } from '../types'
 import { useExpertStore } from '../store/expertStore'
 import { THOUGHT_LABEL } from '../lib/labels'
+import { ACCENT_CHIP, type Accent } from '../lib/accents'
 import { VAvatar } from './VAvatar'
 
-const KIND_META: Record<ThoughtKind, { icon: LucideIcon; tint: string; text: string }> = {
-  plan: { icon: Compass, tint: 'bg-info/15', text: 'text-info-deep' },
-  dispatch: { icon: Users, tint: 'bg-primary-tint', text: 'text-primary-deep' },
-  action: { icon: Settings, tint: 'bg-sun-soft', text: 'text-warn-deep' },
-  finding: { icon: Lightbulb, tint: 'bg-ok/15', text: 'text-ok-deep' },
-  reflect: { icon: Search, tint: 'bg-risk/15', text: 'text-risk-deep' },
+// One accent per kind, so a glance down the stream reads as rhythm rather than
+// as a wall of one colour. These are categorical, not status — a `reflect` is
+// not worse than a `finding`.
+const KIND_META: Record<ThoughtKind, { icon: LucideIcon; accent: Accent }> = {
+  plan: { icon: Compass, accent: 'blue' },
+  dispatch: { icon: Users, accent: 'violet' },
+  action: { icon: Settings, accent: 'amber' },
+  finding: { icon: Lightbulb, accent: 'green' },
+  reflect: { icon: Search, accent: 'rose' },
 }
 
 /** Live thought stream, auto-scrolled to the newest entry. */
@@ -41,7 +45,7 @@ export function VAgentStream({ thoughts }: { thoughts: ThoughtItem[] }) {
               <VAvatar expert={expert} size={28} className="mt-0.5 shadow-card" />
             ) : (
               <span
-                className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full ${meta.tint} ${meta.text}`}
+                className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full ${ACCENT_CHIP[meta.accent]}`}
               >
                 <Icon size={14} />
               </span>
@@ -49,7 +53,7 @@ export function VAgentStream({ thoughts }: { thoughts: ThoughtItem[] }) {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span
-                  className={`inline-flex items-center gap-1 rounded-chip px-2 h-5 text-tag font-medium ${meta.tint} ${meta.text}`}
+                  className={`inline-flex items-center gap-1 rounded-chip px-2 h-5 text-tag font-medium ${ACCENT_CHIP[meta.accent]}`}
                 >
                   <Icon size={11} />
                   {THOUGHT_LABEL[t.kind] ?? t.kind}

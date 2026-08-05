@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { ACCENT_CHIP } from '../lib/accents'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -22,12 +23,14 @@ const KIND_META: Record<
   KBKind,
   { label: string; icon: typeof FileText; cls: string }
 > = {
-  claim: { label: 'Claims', icon: Lightbulb, cls: 'bg-ok/15 text-ok-deep' },
-  evidence: { label: 'Evidence', icon: FileText, cls: 'bg-info/15 text-info-deep' },
-  quote: { label: 'Quotes', icon: Quote, cls: 'bg-warn/15 text-warn-deep' },
-  figure: { label: 'Images', icon: ImageIcon, cls: 'bg-primary-tint text-primary-deep' },
-  note: { label: 'Excerpts', icon: StickyNote, cls: 'bg-sun-soft text-warn-deep' },
-  highlight: { label: 'Highlights', icon: TagIcon, cls: 'bg-risk/15 text-risk-deep' },
+  // A distinct accent each. Previously `warn` covered both quotes and excerpts
+  // and `risk` doubled as highlights, so half the library looked alike.
+  claim: { label: 'Claims', icon: Lightbulb, cls: ACCENT_CHIP.green },
+  evidence: { label: 'Evidence', icon: FileText, cls: ACCENT_CHIP.blue },
+  quote: { label: 'Quotes', icon: Quote, cls: ACCENT_CHIP.amber },
+  figure: { label: 'Images', icon: ImageIcon, cls: ACCENT_CHIP.teal },
+  note: { label: 'Excerpts', icon: StickyNote, cls: ACCENT_CHIP.rose },
+  highlight: { label: 'Highlights', icon: TagIcon, cls: ACCENT_CHIP.violet },
 }
 
 export default function KnowledgePage() {

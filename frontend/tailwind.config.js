@@ -30,10 +30,28 @@ const palette = {
   // trace panels, data grids and quote wells.
   paper: c('paper'),
 
-  // Semantic pairs. The base tone is a surface: it makes the tinted pill behind
-  // a status chip. The `-deep` tone is the ink: same hue, dark enough to reach
-  // 4.5:1 against that pill. Using a base tone as text is the mistake this
-  // split exists to prevent.
+  // Categorical accents. Reach for these when a set of things needs telling
+  // apart — thought kinds, knowledge types, analyst tiers, chart series. Every
+  // pair is a base tone (the tinted pill) and a `-deep` tone (the ink on it,
+  // same hue, dark enough for 4.5:1). Using a base tone as text is the mistake
+  // this split exists to prevent.
+  rose: c('rose'),
+  'rose-deep': c('rose-deep'),
+  clay: c('clay'),
+  'clay-deep': c('clay-deep'),
+  amber: c('amber'),
+  'amber-deep': c('amber-deep'),
+  green: c('green'),
+  'green-deep': c('green-deep'),
+  teal: c('teal'),
+  'teal-deep': c('teal-deep'),
+  blue: c('blue'),
+  'blue-deep': c('blue-deep'),
+  violet: c('violet'),
+  'violet-deep': c('violet-deep'),
+
+  // Semantic names for four of the accents above. Same colours — these exist so
+  // a status chip can say what it means rather than what hue it is.
   ok: c('ok'),
   'ok-deep': c('ok-deep'),
   warn: c('warn'),

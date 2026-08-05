@@ -6,6 +6,7 @@ import { DomainIcon } from '../components/DomainIcon'
 import { VAvatar } from '../components/VAvatar'
 import { VCard } from '../components/ui'
 import { num } from '../lib/format'
+import { ACCENT_CHIP, LEVEL_ACCENT } from '../lib/accents'
 
 const LEVEL_LABEL: Record<string, string> = {
   L1: 'Specialist tier · industry and function',
@@ -66,8 +67,9 @@ export default function ExpertDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-serif text-h1 text-ink">{expert.name}</h1>
             <span
-              className="inline-flex h-6 items-center rounded-chip px-2.5 text-tag font-medium text-ink"
-              style={{ background: expert.badge_color }}
+              className={`inline-flex h-6 items-center rounded-chip px-2.5 text-tag font-medium ${
+                ACCENT_CHIP[LEVEL_ACCENT[expert.level]]
+              }`}
             >
               {expert.level}
             </span>

@@ -32,18 +32,44 @@
   --v-card: 255 255 255;
   --v-paper: 242 244 247;
 
-  /* Base tone = the tinted pill behind a chip. `-deep` = the ink on it, same
-     hue, dark enough to clear 4.5:1 against that pill.
-     `info` is violet rather than blue: against a slate primary the old blue
-     sat 5deg away and read as a slightly-wrong brand colour. */
-  --v-ok: 127 168 140;
-  --v-ok-deep: 79 116 91;
-  --v-warn: 221 175 107;
-  --v-warn-deep: 146 101 34;
-  --v-risk: 201 144 137;
-  --v-risk-deep: 165 85 75;
-  --v-info: 163 121 200;
-  --v-info-deep: 135 81 183;
+  /* ── Categorical accents ───────────────────────────────────────────────────
+     Seven hues that stay diverse without turning loud, because they share one
+     perceived weight rather than one HSL lightness. Each base tone sits at
+     ~0.255 relative luminance — enough to work as a solid mark at 3:1 against
+     the page, not just as a 15% pill.
+
+     Amber is the deliberate exception: yellow cannot hold that luminance and
+     still read as yellow (it turns olive), so it runs lighter and is used as a
+     fill rather than as a fine mark.
+
+     Base tone = the tinted pill behind a chip. `-deep` = the ink on it, same
+     hue, dark enough to clear 4.5:1 against that pill. */
+  --v-rose: 194 113 153;
+  --v-rose-deep: 168 72 120;
+  --v-clay: 190 121 103;
+  --v-clay-deep: 158 86 68;
+  --v-amber: 188 154 59;
+  --v-amber-deep: 128 105 40;
+  --v-green: 66 154 107;
+  --v-green-deep: 51 118 82;
+  --v-teal: 66 151 154;
+  --v-teal-deep: 50 115 118;
+  --v-blue: 103 141 190;
+  --v-blue-deep: 68 108 160;
+  --v-violet: 162 121 198;
+  --v-violet-deep: 134 81 181;
+
+  /* Semantics are names for family members, not separate colours. Keeping the
+     alias means `text-ok-deep` still reads as intent at the call site while
+     there is only one green in the product. */
+  --v-ok: var(--v-green);
+  --v-ok-deep: var(--v-green-deep);
+  --v-warn: var(--v-amber);
+  --v-warn-deep: var(--v-amber-deep);
+  --v-risk: var(--v-clay);
+  --v-risk-deep: var(--v-clay-deep);
+  --v-info: var(--v-violet);
+  --v-info-deep: var(--v-violet-deep);
 
   --v-primary-color: rgb(var(--v-primary));
   --v-primary-deep-color: rgb(var(--v-primary-deep));

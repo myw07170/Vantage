@@ -1,6 +1,7 @@
 import { Gauge, Layers, ShieldCheck, TrendingUp } from 'lucide-react'
 import type { ReportMetrics } from '../types'
 import { asNum, asStr, duration, num } from '../lib/format'
+import { ACCENT_TEXT } from '../lib/accents'
 
 function pct(v: unknown): string {
   const n = asNum(v)
@@ -24,7 +25,7 @@ export function VMetricsPanel({ metrics }: { metrics?: ReportMetrics }) {
     {
       icon: TrendingUp,
       label: 'Time saved',
-      tint: 'text-primary',
+      tint: ACCENT_TEXT.blue,
       value: asNum(eff.efficiency_multiple) != null ? `${eff.efficiency_multiple}×` : '—',
       sub: `${duration(asNum(eff.elapsed_minutes))} actual vs ${duration(
         asNum(eff.manual_estimate_minutes),
@@ -34,7 +35,7 @@ export function VMetricsPanel({ metrics }: { metrics?: ReportMetrics }) {
     {
       icon: Layers,
       label: 'Source coverage',
-      tint: 'text-info-deep',
+      tint: ACCENT_TEXT.teal,
       value: asNum(cov.coverage_multiple) != null ? `${cov.coverage_multiple}×` : '—',
       sub: `${num(asNum(cov.independent_sources))} independent domains · ${num(
         asNum(cov.platforms_covered),
@@ -44,7 +45,7 @@ export function VMetricsPanel({ metrics }: { metrics?: ReportMetrics }) {
     {
       icon: ShieldCheck,
       label: 'Consistency',
-      tint: 'text-ok-deep',
+      tint: ACCENT_TEXT.green,
       value: pct(con.value),
       sub: `${pct(con.claims_with_evidence_ratio)} of claims sourced · ${pct(
         con.schema_completeness,
@@ -54,7 +55,7 @@ export function VMetricsPanel({ metrics }: { metrics?: ReportMetrics }) {
     {
       icon: Gauge,
       label: 'High confidence',
-      tint: 'text-warn-deep',
+      tint: ACCENT_TEXT.amber,
       value: pct(biz.accuracy),
       sub: `${pct(biz.cross_validated_ratio)} cross-validated · ${num(
         asNum(biz.rework_rounds),

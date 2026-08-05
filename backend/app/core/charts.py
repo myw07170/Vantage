@@ -13,17 +13,26 @@ from typing import Any, Dict, List
 PALETTE = {
     "primary": "#5B7396",
     "sun": "#E8C48F",
-    "info": "#A379C8",
-    "risk": "#C99089",
+    "info": "#A279C6",
+    "risk": "#BE7967",
     "soft": "#93A6C0",
     "ink": "#333A42",
     "ink2": "#575D66",
     "line": "#E2E6EC",
 }
-# Ordered for maximum separation between neighbours, since adjacent series are
-# what a reader has to tell apart.
-SERIES = ["#5B7396", "#DDAF6B", "#7FA88C", "#A379C8", "#C99089", "#93A6C0"]
-SENTIMENT = {"pos": "#7FA88C", "neu": "#C6CBD3", "neg": "#C99089"}
+# The categorical accent family. Every entry shares one perceived weight, so no
+# single series shouts; ordered for maximum hue separation between neighbours,
+# since adjacent series are what a reader actually has to tell apart.
+SERIES = [
+    "#678DBE",  # blue
+    "#BC9A3B",  # amber
+    "#42979A",  # teal
+    "#C27199",  # rose
+    "#429A6B",  # green
+    "#A279C6",  # violet
+    "#BE7967",  # clay
+]
+SENTIMENT = {"pos": "#429A6B", "neu": "#C6CBD3", "neg": "#BE7967"}
 SENTIMENT_LABEL = {"pos": "Positive", "neu": "Neutral", "neg": "Negative"}
 
 _BASE_TEXT = {
