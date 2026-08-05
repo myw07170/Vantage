@@ -262,9 +262,8 @@ provider worked, it just found nothing.
 any modified version — including one offered as a network service — must also be
 released under AGPL-3.0.
 
-Vantage is a US-market derivative of [**VerdaAI (青野 Verda)**](https://github.com/kangjiayao14/VerdaAI-Investigator), which established 
-the multi-agent Deep Research architecture, the evidence-to-claim-to-confidence
-model, the rework loop and the trace system. Vantage keeps that architecture and
-replaces the provider integrations (Zhipu GLM → Gemini, Bocha → Exa/Tavily/DDG,
-Chinese social platforms → Reddit/HN/review sites) along with all content and
-market grounding. As a derivative work it inherits AGPL-3.0.
+Vantage's early design referenced the multi-agent Deep Research framework of
+[**VerdaAI (青野 Verda)**](https://github.com/kangjiayao14/VerdaAI-Investigator)
+by [@kangjiayao14](https://github.com/kangjiayao14), and carries its AGPL-3.0
+licence accordingly. The pipeline, providers, analyst team and interface have
+since been substantially rebuilt for the US market.
