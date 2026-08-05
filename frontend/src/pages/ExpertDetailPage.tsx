@@ -6,7 +6,7 @@ import { DomainIcon } from '../components/DomainIcon'
 import { VAvatar } from '../components/VAvatar'
 import { VCard } from '../components/ui'
 import { num } from '../lib/format'
-import { ACCENT_CHIP, LEVEL_ACCENT } from '../lib/accents'
+import { ACCENT_CHIP, ACCENT_TEXT, LEVEL_ACCENT } from '../lib/accents'
 
 const LEVEL_LABEL: Record<string, string> = {
   L1: 'Specialist tier · industry and function',
@@ -83,7 +83,7 @@ export default function ExpertDetailPage() {
       <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
         <VCard hover={false}>
           <div className="flex items-center gap-2 text-aux font-semibold text-ink">
-            <Sparkles size={16} className="text-primary" /> Core skills
+            <Sparkles size={16} className={ACCENT_TEXT.blue} /> Core skills
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {expert.skills.map((s) => (
@@ -99,7 +99,7 @@ export default function ExpertDetailPage() {
 
         <VCard hover={false}>
           <div className="flex items-center gap-2 text-aux font-semibold text-ink">
-            <Target size={16} className="text-primary" /> Expertise
+            <Target size={16} className={ACCENT_TEXT.violet} /> Expertise
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {expert.knowledge_tags.map((t) => (
@@ -115,7 +115,7 @@ export default function ExpertDetailPage() {
 
         <VCard hover={false} className="md:col-span-2">
           <div className="flex items-center gap-2 text-aux font-semibold text-ink">
-            <BookText size={16} className="text-primary" /> Background
+            <BookText size={16} className={ACCENT_TEXT.orchid} /> Background
           </div>
           <p className="mt-3 text-body leading-relaxed text-ink-2">
             {expert.knowledge_base}
@@ -124,7 +124,7 @@ export default function ExpertDetailPage() {
 
         <VCard hover={false} className="md:col-span-2">
           <div className="flex items-center gap-2 text-aux font-semibold text-ink">
-            <Award size={16} className="text-primary" /> Track record
+            <Award size={16} className={ACCENT_TEXT.pink} /> Track record
           </div>
           <div className="mt-3 flex gap-8">
             <div>

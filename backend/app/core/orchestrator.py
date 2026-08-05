@@ -618,13 +618,17 @@ def _dispatch_experts(query: str, brands: List[str], focus: List[str]) -> Dict[s
     return {"lead": DIRECTOR, "members": normalize_team(members, scores)}
 
 
+# Execution order, which the UI renders top to bottom. Review sits before Write
+# on purpose: the audit gates the analysis and can send it back for rework, so
+# what reaches the writer has already passed quality. Listing Write first was a
+# display bug — it implied the report was audited after it was drafted.
 DAG_NODES = [
     {"id": "intake", "label": "Understand"},
     {"id": "orchestrator", "label": "Assemble"},
     {"id": "collect", "label": "Collect"},
     {"id": "analyze", "label": "Analyze"},
-    {"id": "write", "label": "Write"},
     {"id": "audit", "label": "Review"},
+    {"id": "write", "label": "Write"},
     {"id": "verify", "label": "Verify"},
     {"id": "done", "label": "Deliver"},
 ]

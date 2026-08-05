@@ -114,6 +114,9 @@ export function VFilterChip({
 }
 
 /* ── Ambient glow ────────────────────────────────────────────────────────── */
+/** Soft wash behind the hero. Pink rather than amber: it is the largest area of
+ *  colour on the landing page, so leaving it warm-yellow would undercut the
+ *  blue-and-pink theme everything else follows. */
 export function VSunGlow({ className = '' }: { className?: string }) {
   return (
     <div
@@ -123,7 +126,8 @@ export function VSunGlow({ className = '' }: { className?: string }) {
         height: 520,
         top: -160,
         right: -120,
-        background: 'radial-gradient(circle, rgb(var(--v-sun)) 0%, rgb(var(--v-sun) / 0) 70%)',
+        background:
+          'radial-gradient(circle, rgb(var(--v-pink)) 0%, rgb(var(--v-pink) / 0) 70%)',
         opacity: 0.5,
         filter: 'blur(8px)',
       }}

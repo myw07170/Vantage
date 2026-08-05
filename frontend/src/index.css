@@ -12,62 +12,78 @@
  * that need a raw value rather than a Tailwind class (D3 scales, inline SVG).
  */
 :root {
-  /* Slate indigo. The primary is a cool blue at ~215deg; `sun` is deliberately
-     the only warm tone left, which is what keeps tier badges and the hero glow
-     reading as an accent instead of as more brand colour. */
-  --v-primary: 91 115 150;
-  --v-primary-soft: 147 166 192;
-  --v-primary-tint: 233 237 243;
-  --v-primary-deep: 85 107 140;
-  --v-primary-deeper: 76 96 125;
-
-  --v-sun: 232 196 143;
-  --v-sun-soft: 250 242 230;
-
-  --v-ink: 51 58 66;
-  --v-ink-2: 87 93 102;
-  --v-ink-3: 103 111 122;
-  --v-line: 226 230 236;
-  --v-bg: 249 250 251;
+  /* Neutrals lean very slightly rosy (hue 20, very low saturation) so the
+     ground belongs to the pink half of the theme rather than fighting it. The
+     warmth is barely nameable at these lightnesses, but it is the difference
+     between paper and screen-grey. */
+  --v-ink: 62 58 55;
+  --v-ink-2: 99 90 87;
+  --v-ink-3: 119 107 101;
+  --v-line: 235 229 225;
+  --v-bg: 252 250 249;
   --v-card: 255 255 255;
-  --v-paper: 242 244 247;
+  --v-paper: 246 242 240;
 
-  /* ── Categorical accents ───────────────────────────────────────────────────
-     Seven hues that stay diverse without turning loud, because they share one
-     perceived weight rather than one HSL lightness. Each base tone sits at
-     ~0.255 relative luminance — enough to work as a solid mark at 3:1 against
-     the page, not just as a 15% pill.
+  /* The brand blue: the arc's `blue`, deepened for UI use. `primary` is a mark
+     and a surface; anything carrying a white label uses `primary-deep`. */
+  --v-primary: 108 146 189;
+  --v-primary-soft: 160 183 210;
+  --v-primary-tint: 225 235 246;
+  --v-primary-deep: 67 106 150;
+  --v-primary-deeper: 61 97 137;
 
-     Amber is the deliberate exception: yellow cannot hold that luminance and
-     still read as yellow (it turns olive), so it runs lighter and is used as a
-     fill rather than as a fine mark.
+  /* Amber surfaces for caution panels and the `Important` highlight. */
+  --v-sun: 232 210 159;
+  --v-sun-soft: 249 243 229;
 
-     Base tone = the tinted pill behind a chip. `-deep` = the ink on it, same
-     hue, dark enough to clear 4.5:1 against that pill. */
-  --v-rose: 194 113 153;
-  --v-rose-deep: 168 72 120;
-  --v-clay: 190 121 103;
-  --v-clay-deep: 158 86 68;
-  --v-amber: 188 154 59;
-  --v-amber-deep: 128 105 40;
-  --v-green: 66 154 107;
-  --v-green-deep: 51 118 82;
-  --v-teal: 66 151 154;
-  --v-teal-deep: 50 115 118;
-  --v-blue: 103 141 190;
-  --v-blue-deep: 68 108 160;
-  --v-violet: 162 121 198;
-  --v-violet-deep: 134 81 181;
+  /* ── The arc ───────────────────────────────────────────────────────────────
+     Categorical colour runs blue -> indigo -> violet -> orchid -> pink -> rose:
+     six steps ~28deg apart, so a set is still tellable apart while the page
+     reads as two colours rather than a paint box. Nothing between yellow and
+     cyan appears here at all.
 
-  /* Semantics are names for family members, not separate colours. Keeping the
-     alias means `text-ok-deep` still reads as intent at the call site while
-     there is only one green in the product. */
-  --v-ok: var(--v-green);
-  --v-ok-deep: var(--v-green-deep);
-  --v-warn: var(--v-amber);
-  --v-warn-deep: var(--v-amber-deep);
-  --v-risk: var(--v-clay);
-  --v-risk-deep: var(--v-clay-deep);
+     Three steps per hue, each with a job:
+       -tint   pastel surface — icon wells, nav items, section washes. This is
+               what puts colour into the page's furniture rather than leaving it
+               in chips a few pixels tall.
+        base   solid mark — chart series, dots, bars. ~0.255 luminance, which
+               holds 3:1 against the page.
+       -deep   ink, dark enough for 4.5:1 on either lighter step. */
+  --v-blue-tint: 225 235 246;
+  --v-blue: 108 141 179;
+  --v-blue-deep: 74 106 143;
+  --v-indigo-tint: 232 232 248;
+  --v-indigo: 133 133 192;
+  --v-indigo-deep: 95 95 173;
+  --v-violet-tint: 239 231 248;
+  --v-violet: 155 126 188;
+  --v-violet-deep: 124 87 167;
+  --v-orchid-tint: 246 228 247;
+  --v-orchid: 179 116 183;
+  --v-orchid-deep: 146 78 151;
+  --v-pink-tint: 247 229 240;
+  --v-pink: 184 117 157;
+  --v-pink-deep: 154 79 124;
+  --v-rose-tint: 248 229 232;
+  --v-rose: 186 120 131;
+  --v-rose-deep: 157 80 93;
+
+  /* ── Status ────────────────────────────────────────────────────────────────
+     The only colours off the arc, and only where meaning demands it. `ok` is a
+     cool teal-green that sits next to blue; `warn` is the single warm outlier,
+     because caution is not a hue you can move without losing the convention.
+     `risk` needs no colour of its own — the deep end of the arc already reads
+     as negative. */
+  --v-ok-tint: 205 241 239;
+  --v-ok: 74 150 148;
+  --v-ok-deep: 56 113 112;
+  --v-warn-tint: 242 233 211;
+  --v-warn: 186 154 78;
+  --v-warn-deep: 124 101 48;
+  --v-risk-tint: var(--v-rose-tint);
+  --v-risk: var(--v-rose);
+  --v-risk-deep: var(--v-rose-deep);
+  --v-info-tint: var(--v-violet-tint);
   --v-info: var(--v-violet);
   --v-info-deep: var(--v-violet-deep);
 

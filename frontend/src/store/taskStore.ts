@@ -49,13 +49,17 @@ export interface StreamMessage {
   sections?: string[]
 }
 
+// Must match DAG_NODES in backend/app/core/orchestrator.py — this is the
+// placeholder shown until the first node_update arrives with the real list.
+// Review precedes Write because the audit gates the analysis and can send it
+// back for rework; the writer only ever sees work that has passed.
 const BASE_NODES: DAGNode[] = [
   { id: 'intake', label: 'Understand', status: 'idle' },
   { id: 'orchestrator', label: 'Assemble', status: 'idle' },
   { id: 'collect', label: 'Collect', status: 'idle' },
   { id: 'analyze', label: 'Analyze', status: 'idle' },
-  { id: 'write', label: 'Write', status: 'idle' },
   { id: 'audit', label: 'Review', status: 'idle' },
+  { id: 'write', label: 'Write', status: 'idle' },
   { id: 'verify', label: 'Verify', status: 'idle' },
   { id: 'done', label: 'Deliver', status: 'idle' },
 ]

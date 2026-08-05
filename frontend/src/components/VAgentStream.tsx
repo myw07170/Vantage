@@ -12,10 +12,10 @@ import { VAvatar } from './VAvatar'
 // not worse than a `finding`.
 const KIND_META: Record<ThoughtKind, { icon: LucideIcon; accent: Accent }> = {
   plan: { icon: Compass, accent: 'blue' },
-  dispatch: { icon: Users, accent: 'violet' },
-  action: { icon: Settings, accent: 'amber' },
-  finding: { icon: Lightbulb, accent: 'green' },
-  reflect: { icon: Search, accent: 'rose' },
+  dispatch: { icon: Users, accent: 'indigo' },
+  action: { icon: Settings, accent: 'violet' },
+  finding: { icon: Lightbulb, accent: 'orchid' },
+  reflect: { icon: Search, accent: 'pink' },
 }
 
 /** Live thought stream, auto-scrolled to the newest entry. */

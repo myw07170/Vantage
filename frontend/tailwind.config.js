@@ -30,34 +30,42 @@ const palette = {
   // trace panels, data grids and quote wells.
   paper: c('paper'),
 
-  // Categorical accents. Reach for these when a set of things needs telling
-  // apart — thought kinds, knowledge types, analyst tiers, chart series. Every
-  // pair is a base tone (the tinted pill) and a `-deep` tone (the ink on it,
-  // same hue, dark enough for 4.5:1). Using a base tone as text is the mistake
-  // this split exists to prevent.
-  rose: c('rose'),
-  'rose-deep': c('rose-deep'),
-  clay: c('clay'),
-  'clay-deep': c('clay-deep'),
-  amber: c('amber'),
-  'amber-deep': c('amber-deep'),
-  green: c('green'),
-  'green-deep': c('green-deep'),
-  teal: c('teal'),
-  'teal-deep': c('teal-deep'),
+  // The categorical arc: blue -> indigo -> violet -> orchid -> pink -> rose.
+  // Reach for these when a set of things needs telling apart — thought kinds,
+  // knowledge types, analyst tiers, chart series. Each hue is a `-tint` surface,
+  // a base mark and a `-deep` ink. Using a base tone as text is the mistake this
+  // split exists to prevent.
+  'blue-tint': c('blue-tint'),
   blue: c('blue'),
   'blue-deep': c('blue-deep'),
+  'indigo-tint': c('indigo-tint'),
+  indigo: c('indigo'),
+  'indigo-deep': c('indigo-deep'),
+  'violet-tint': c('violet-tint'),
   violet: c('violet'),
   'violet-deep': c('violet-deep'),
+  'orchid-tint': c('orchid-tint'),
+  orchid: c('orchid'),
+  'orchid-deep': c('orchid-deep'),
+  'pink-tint': c('pink-tint'),
+  pink: c('pink'),
+  'pink-deep': c('pink-deep'),
+  'rose-tint': c('rose-tint'),
+  rose: c('rose'),
+  'rose-deep': c('rose-deep'),
 
-  // Semantic names for four of the accents above. Same colours — these exist so
-  // a status chip can say what it means rather than what hue it is.
+  // Status. `ok` and `warn` are the only colours off the arc; `risk` is the
+  // arc's deep rose under a name that says what it means.
+  'ok-tint': c('ok-tint'),
   ok: c('ok'),
   'ok-deep': c('ok-deep'),
+  'warn-tint': c('warn-tint'),
   warn: c('warn'),
   'warn-deep': c('warn-deep'),
+  'risk-tint': c('risk-tint'),
   risk: c('risk'),
   'risk-deep': c('risk-deep'),
+  'info-tint': c('info-tint'),
   info: c('info'),
   'info-deep': c('info-deep'),
 }

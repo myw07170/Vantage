@@ -23,6 +23,7 @@ import { VTracePanel } from '../components/VTracePanel'
 import { VAvatar } from '../components/VAvatar'
 import { VCountUp } from '../components/ui'
 import { plural } from '../lib/format'
+import { ACCENT_TEXT } from '../lib/accents'
 
 export default function WorkspacePage() {
   const { taskId } = useParams()
@@ -118,14 +119,14 @@ export default function WorkspacePage() {
           <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5">
             <div>
               <div className="mb-3 flex items-center gap-1.5 text-aux font-semibold text-ink">
-                <Activity size={15} className="text-primary" /> Pipeline
+                <Activity size={15} className={ACCENT_TEXT.blue} /> Pipeline
               </div>
               <VFlowDag nodes={nodes} />
             </div>
 
             <div>
               <div className="mb-2 flex items-center gap-1.5 text-aux font-semibold text-ink">
-                <Users size={15} className="text-primary" /> Team ({teamMembers.length})
+                <Users size={15} className={ACCENT_TEXT.violet} /> Team ({teamMembers.length})
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {teamMembers.map((id) => {
@@ -233,7 +234,7 @@ export default function WorkspacePage() {
 
         <aside className="hidden min-h-0 flex-col border-l border-line bg-card/40 lg:flex">
           <div className="flex items-center gap-1.5 border-b border-line px-5 py-3 text-aux font-semibold text-ink">
-            <FileText size={15} className="text-primary" /> Evidence (
+            <FileText size={15} className={ACCENT_TEXT.pink} /> Evidence (
             {evidences.length})
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-4">

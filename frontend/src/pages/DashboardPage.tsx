@@ -53,8 +53,8 @@ function fmtSaved(min: number): { value: number; unit: string } {
 
 const CATEGORY_COLOR: Record<string, string> = {
   primary: ACCENT_FILL.blue,
-  media: ACCENT_FILL.teal,
-  social: ACCENT_FILL.rose,
+  media: ACCENT_FILL.violet,
+  social: ACCENT_FILL.pink,
 }
 const CATEGORY_ORDER = ['primary', 'media', 'social'] as const
 
@@ -273,7 +273,7 @@ export default function DashboardPage() {
           >
             <VCard hover={false}>
               <div className="flex flex-wrap items-center gap-2 text-aux font-semibold text-ink">
-                <Gauge size={16} className="text-primary" /> Measured impact
+                <Gauge size={16} className={ACCENT_TEXT.blue} /> Measured impact
                 <span className="ml-1 font-normal text-tag text-ink-3">
                   versus a manual analysis baseline · hover any figure for its formula
                 </span>
@@ -289,7 +289,7 @@ export default function DashboardPage() {
                 />
                 <ImpactCard
                   icon={Zap}
-                  color={ACCENT_TEXT.amber}
+                  color={ACCENT_TEXT.violet}
                   value={stats!.avg_efficiency ?? 0}
                   unit="×"
                   label="Average speed-up"
@@ -297,7 +297,7 @@ export default function DashboardPage() {
                 />
                 <ImpactCard
                   icon={Layers}
-                  color={ACCENT_TEXT.teal}
+                  color={ACCENT_TEXT.orchid}
                   value={stats!.avg_coverage ?? 0}
                   unit="×"
                   label="Source coverage"
@@ -305,7 +305,7 @@ export default function DashboardPage() {
                 />
                 <ImpactCard
                   icon={Activity}
-                  color={ACCENT_TEXT.violet}
+                  color={ACCENT_TEXT.pink}
                   value={Math.round((stats!.total_tokens ?? 0) / 1000)}
                   unit="K"
                   label="Tokens used"
@@ -324,7 +324,7 @@ export default function DashboardPage() {
             >
               <VCard hover={false}>
                 <div className="flex flex-wrap items-center gap-2 text-aux font-semibold text-ink">
-                  <FileText size={16} className="text-primary" /> Research runs
+                  <FileText size={16} className={ACCENT_TEXT.indigo} /> Research runs
                   <span className="ml-1 font-normal text-tag text-ink-3">
                     open the report, or the decision trace behind it
                   </span>
@@ -402,7 +402,7 @@ export default function DashboardPage() {
             >
               <VCard hover={false}>
                 <div className="flex flex-wrap items-center gap-2 text-aux font-semibold text-ink">
-                  <Radar size={16} className="text-primary" /> Coverage by competitor
+                  <Radar size={16} className={ACCENT_TEXT.violet} /> Coverage by competitor
                   <span className="ml-1 font-normal text-tag text-ink-3">
                     click to filter the evidence library
                   </span>
@@ -459,7 +459,7 @@ export default function DashboardPage() {
             <motion.div variants={fadeUp} initial="initial" animate="animate">
               <VCard hover={false}>
                 <div className="flex items-center gap-2 text-aux font-semibold text-ink">
-                  <PieChart size={16} className="text-primary" /> Source mix
+                  <PieChart size={16} className={ACCENT_TEXT.orchid} /> Source mix
                 </div>
                 <p className="mt-1 text-tag text-ink-3">
                   Whether the evidence base is balanced determines how much weight the
@@ -510,7 +510,7 @@ export default function DashboardPage() {
             >
               <VCard hover={false}>
                 <div className="flex flex-wrap items-center gap-2 text-aux font-semibold text-ink">
-                  <Search size={16} className="text-primary" /> Evidence library
+                  <Search size={16} className={ACCENT_TEXT.pink} /> Evidence library
                   <span className="ml-1 font-normal text-tag text-ink-3">
                     {num(ev.facets.total)} total · {num(filteredEv.length)} shown
                   </span>
@@ -600,7 +600,7 @@ export default function DashboardPage() {
             <motion.div variants={fadeUp} initial="initial" animate="animate">
               <VCard hover={false}>
                 <div className="flex items-center gap-2 text-aux font-semibold text-ink">
-                  <Bell size={16} className="text-primary" /> Watchlist
+                  <Bell size={16} className={ACCENT_TEXT.rose} /> Watchlist
                 </div>
                 <p className="mt-1 text-tag text-ink-3">
                   Save a competitive question and re-run it later for what changed.
@@ -674,7 +674,7 @@ export default function DashboardPage() {
             >
               <VCard hover={false}>
                 <div className="flex flex-wrap items-center gap-2 text-aux font-semibold text-ink">
-                  <Users size={16} className="text-primary" /> Analyst contributions
+                  <Users size={16} className={ACCENT_TEXT.indigo} /> Analyst contributions
                   <span className="ml-1 font-normal text-tag text-ink-3">
                     by engagements worked
                   </span>

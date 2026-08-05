@@ -2,24 +2,27 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FileText, Plus, Clock, Network, ShieldCheck, Trash2 } from 'lucide-react'
-import { deleteReport, fetchReports } from '../lib/api'
+import { deleteReport } from '../lib/api'
 import type { ReportCard } from '../types'
 import { fadeUp, stagger } from '../lib/motion'
 import { VConfirm, VEmpty, VSkeleton } from '../components/ui'
 import { formatDate, num } from '../lib/format'
+import { useReportStore } from '../store/reportStore'
 
 export default function LibraryPage() {
   const navigate = useNavigate()
-  const [reports, setReports] = useState<ReportCard[]>([])
-  const [loading, setLoading] = useState(true)
+  // Shared with the sidebar's recents list, so a delete here removes the entry
+  // there too instead of leaving a link to a report that no longer exists.
+  const reports = useReportStore((s) => s.cards)
+  const loading = useReportStore((s) => s.cardsLoading)
+  const loadCards = useReportStore((s) => s.loadCards)
+  const removeCard = useReportStore((s) => s.removeCard)
   const [pendingDelete, setPendingDelete] = useState<ReportCard | null>(null)
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
-    fetchReports()
-      .then(setReports)
-      .finally(() => setLoading(false))
-  }, [])
+    loadCards()
+  }, [loadCards])
 
   const confirmDelete = async () => {
     if (!pendingDelete) return
@@ -30,7 +33,7 @@ export default function LibraryPage() {
     // Drop it locally on success rather than refetching — one less round trip,
     // and a failed delete leaves the card in place instead of silently
     // vanishing it from a list the server still has.
-    if (res.ok) setReports((rs) => rs.filter((r) => r.id !== pendingDelete.id))
+    if (res.ok) removeCard(pendingDelete.id)
   }
 
   return (

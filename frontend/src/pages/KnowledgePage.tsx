@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ACCENT_CHIP } from '../lib/accents'
+import { ACCENT_CHIP, ACCENT_WELL, ROUTE_ACCENT } from '../lib/accents'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -23,14 +23,14 @@ const KIND_META: Record<
   KBKind,
   { label: string; icon: typeof FileText; cls: string }
 > = {
-  // A distinct accent each. Previously `warn` covered both quotes and excerpts
-  // and `risk` doubled as highlights, so half the library looked alike.
-  claim: { label: 'Claims', icon: Lightbulb, cls: ACCENT_CHIP.green },
-  evidence: { label: 'Evidence', icon: FileText, cls: ACCENT_CHIP.blue },
-  quote: { label: 'Quotes', icon: Quote, cls: ACCENT_CHIP.amber },
-  figure: { label: 'Images', icon: ImageIcon, cls: ACCENT_CHIP.teal },
-  note: { label: 'Excerpts', icon: StickyNote, cls: ACCENT_CHIP.rose },
-  highlight: { label: 'Highlights', icon: TagIcon, cls: ACCENT_CHIP.violet },
+  // The six kinds take the six arc steps in order, so the library reads as one
+  // gradient rather than as six unrelated colours.
+  claim: { label: 'Claims', icon: Lightbulb, cls: ACCENT_CHIP.blue },
+  evidence: { label: 'Evidence', icon: FileText, cls: ACCENT_CHIP.indigo },
+  quote: { label: 'Quotes', icon: Quote, cls: ACCENT_CHIP.violet },
+  figure: { label: 'Images', icon: ImageIcon, cls: ACCENT_CHIP.orchid },
+  note: { label: 'Excerpts', icon: StickyNote, cls: ACCENT_CHIP.pink },
+  highlight: { label: 'Highlights', icon: TagIcon, cls: ACCENT_CHIP.rose },
 }
 
 export default function KnowledgePage() {
@@ -71,7 +71,11 @@ export default function KnowledgePage() {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
       <div className="flex items-center gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-card bg-primary-tint text-primary">
+        <span
+          className={`grid h-11 w-11 shrink-0 place-items-center rounded-card ${
+            ACCENT_WELL[ROUTE_ACCENT['/knowledge']]
+          }`}
+        >
           <Library size={24} strokeWidth={1.8} />
         </span>
         <div>

@@ -11,28 +11,29 @@ from typing import Any, Dict, List
 # here and rendered verbatim, so this is the one place chart colour cannot come
 # from a CSS variable — keep it in step when the theme changes.
 PALETTE = {
-    "primary": "#5B7396",
-    "sun": "#E8C48F",
-    "info": "#A279C6",
-    "risk": "#BE7967",
-    "soft": "#93A6C0",
-    "ink": "#333A42",
-    "ink2": "#575D66",
-    "line": "#E2E6EC",
+    "primary": "#6C92BD",
+    "sun": "#E8D29F",
+    "info": "#9B7EBC",
+    "risk": "#BA7883",
+    "soft": "#A0B7D2",
+    "ink": "#3E3A37",
+    "ink2": "#635A57",
+    "line": "#EBE5E1",
 }
-# The categorical accent family. Every entry shares one perceived weight, so no
-# single series shouts; ordered for maximum hue separation between neighbours,
-# since adjacent series are what a reader actually has to tell apart.
+# The categorical arc, blue through to rose. Every entry shares one perceived
+# weight, so no single series shouts; ordered so neighbours sit far apart on the
+# arc, since adjacent series are what a reader actually has to tell apart.
 SERIES = [
-    "#678DBE",  # blue
-    "#BC9A3B",  # amber
-    "#42979A",  # teal
-    "#C27199",  # rose
-    "#429A6B",  # green
-    "#A279C6",  # violet
-    "#BE7967",  # clay
+    "#6C8DB3",  # blue
+    "#B8759D",  # pink
+    "#9B7EBC",  # violet
+    "#BA7883",  # rose
+    "#8585C0",  # indigo
+    "#B374B7",  # orchid
 ]
-SENTIMENT = {"pos": "#429A6B", "neu": "#C6CBD3", "neg": "#BE7967"}
+# Sentiment keeps a green and a red, because positive and negative are the one
+# place hue carries meaning a reader already knows.
+SENTIMENT = {"pos": "#4A9694", "neu": "#CBC5C2", "neg": "#BA7883"}
 SENTIMENT_LABEL = {"pos": "Positive", "neu": "Neutral", "neg": "Negative"}
 
 _BASE_TEXT = {
@@ -82,7 +83,7 @@ def feature_radar(
         "radar": {
             "indicator": indicator,
             "splitLine": _axis_line(),
-            "splitArea": {"areaStyle": {"color": ["#F9FAFB", "#FFFFFF"]}},
+            "splitArea": {"areaStyle": {"color": ["#FCFAF9", "#FFFFFF"]}},
             "axisName": {"color": PALETTE["ink2"]},
         },
         "series": [{"type": "radar", "data": data, "symbolSize": 5}],
@@ -274,7 +275,7 @@ def five_forces_radar(title: str, forces: Dict[str, Any]) -> Dict[str, Any]:
         "radar": {
             "indicator": indicator,
             "splitLine": _axis_line(),
-            "splitArea": {"areaStyle": {"color": ["#F9FAFB", "#FFFFFF"]}},
+            "splitArea": {"areaStyle": {"color": ["#FCFAF9", "#FFFFFF"]}},
             "axisName": {"color": PALETTE["ink2"], "fontSize": 11},
         },
         "series": [

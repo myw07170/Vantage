@@ -18,6 +18,7 @@ import { VAvatar } from '../components/VAvatar'
 import { fadeUp, stagger } from '../lib/motion'
 import { useExpertStore } from '../store/expertStore'
 import { createTask } from '../lib/api'
+import { ACCENT_WELL, type Accent } from '../lib/accents'
 
 const MODE_OPTIONS = [
   { key: 'quick', icon: Zap, label: 'Quick', desc: '5 sections · a few minutes' },
@@ -30,27 +31,39 @@ const MODE_OPTIONS = [
   },
 ]
 
-const EXAMPLES = [
+// One accent each, so the four entry points read as four different kinds of
+// question rather than as one card repeated.
+const EXAMPLES: {
+  icon: typeof Layers
+  accent: Accent
+  title: string
+  desc: string
+  q: string
+}[] = [
   {
     icon: Layers,
+    accent: 'blue',
     title: 'Feature benchmark',
     desc: 'Compare Notion, Obsidian and Craft head to head',
     q: 'Compare Notion, Obsidian and Craft on features and pricing for research teams',
   },
   {
     icon: CreditCard,
+    accent: 'violet',
     title: 'Pricing teardown',
     desc: 'How Figma, Sketch and Framer package and price',
     q: 'Analyze how Figma, Sketch and Framer structure their pricing and packaging',
   },
   {
     icon: ShieldCheck,
+    accent: 'orchid',
     title: 'SWOT analysis',
     desc: 'Structured SWOT across Slack, Teams and Discord',
     q: 'Build a structured SWOT comparison of Slack, Microsoft Teams and Discord',
   },
   {
     icon: TrendingUp,
+    accent: 'pink',
     title: 'Market trends',
     desc: 'Where the AI coding assistant market is heading',
     q: 'What are the key trends and leading players in the AI coding assistant market in 2026?',
@@ -190,7 +203,11 @@ export default function HomePage() {
               onClick={() => submit(ex.q)}
               className="group flex flex-col rounded-card border border-line/60 bg-card/80 p-4 text-left shadow-card backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-float"
             >
-              <span className="grid h-9 w-9 place-items-center rounded-btn bg-primary-tint text-primary">
+              <span
+                className={`grid h-9 w-9 place-items-center rounded-btn ${
+                  ACCENT_WELL[ex.accent]
+                }`}
+              >
                 <ex.icon size={18} />
               </span>
               <span className="mt-3 text-aux font-semibold text-ink">{ex.title}</span>
