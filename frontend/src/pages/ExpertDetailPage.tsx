@@ -26,7 +26,7 @@ export default function ExpertDetailPage() {
         <p>Analyst not found.</p>
         <button
           onClick={() => navigate('/experts')}
-          className="h-10 rounded-btn bg-primary px-5 text-aux font-medium text-white"
+          className="h-10 rounded-btn bg-primary-deep px-5 text-aux font-medium text-white"
         >
           Back to the team
         </button>

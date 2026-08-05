@@ -179,12 +179,12 @@ export function VEditableBlock({
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) commit()
             if (e.key === 'Escape') cancel()
           }}
-          className="w-full resize-none rounded-card border border-primary/40 bg-primary-tint/20 p-3 text-body leading-relaxed text-ink outline-none focus:border-primary"
+          className="w-full resize-none rounded-card border border-primary/40 bg-primary-tint/20 p-3 text-body leading-relaxed text-ink outline-none transition-all focus:border-primary focus:shadow-glow"
         />
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           <button
             onClick={commit}
-            className="inline-flex items-center gap-1 rounded-btn bg-primary px-2.5 h-7 text-tag font-medium text-white hover:bg-primary-deep"
+            className="inline-flex items-center gap-1 rounded-btn bg-primary-deep px-2.5 h-7 text-tag font-medium text-white hover:bg-primary-deeper"
           >
             <Check size={12} /> Save
           </button>

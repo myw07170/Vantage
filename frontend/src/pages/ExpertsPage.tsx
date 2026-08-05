@@ -22,10 +22,12 @@ const LEVEL_TABS: {
   { key: 'L1', label: 'Specialist', desc: (n) => `${n} · industry and function` },
 ]
 
+// These are the same three values as `badge_color` in experts.json, expressed
+// as tokens so the tier badges follow the palette rather than pinning it.
 const LEVEL_BG: Record<ExpertLevel, string> = {
-  L1: 'bg-[#EAF1EA]',
-  L2: 'bg-[#FBF6E9]',
-  L3: 'bg-[#F4E2B8]',
+  L1: 'bg-primary-tint',
+  L2: 'bg-sun-soft',
+  L3: 'bg-sun',
 }
 
 function ExpertCard({ expert, onClick }: { expert: Expert; onClick: () => void }) {
@@ -33,7 +35,7 @@ function ExpertCard({ expert, onClick }: { expert: Expert; onClick: () => void }
     <motion.button
       variants={fadeUp}
       onClick={onClick}
-      className="group relative flex flex-col items-center rounded-card border border-line/60 bg-card p-4 text-center shadow-card transition-all hover:-translate-y-1 hover:shadow-float"
+      className="group relative flex flex-col items-center rounded-card border border-line/60 bg-card p-4 text-center shadow-card transition-all hover:-translate-y-0.5 hover:shadow-float"
     >
       <span
         className={`absolute right-2.5 top-2.5 inline-flex h-5 items-center gap-1 rounded-chip px-2 text-tag font-medium text-ink-2 ${
@@ -101,7 +103,7 @@ export default function ExpertsPage() {
       </header>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
-        <div className="flex h-10 items-center gap-2 rounded-btn border border-line bg-card px-3 shadow-card">
+        <div className="flex h-10 items-center gap-2 rounded-btn border border-line bg-card px-3 shadow-card transition-all focus-within:border-primary focus-within:shadow-glow">
           <Search size={16} className="text-ink-3" />
           <input
             value={kw}
@@ -117,7 +119,7 @@ export default function ExpertsPage() {
               onClick={() => setTab(t.key)}
               className={`flex flex-col items-start rounded-btn px-3.5 py-1.5 text-left transition-all ${
                 tab === t.key
-                  ? 'bg-primary text-white shadow-card'
+                  ? 'bg-primary-deep text-white shadow-card'
                   : 'bg-card text-ink-2 hover:bg-primary-tint'
               }`}
             >

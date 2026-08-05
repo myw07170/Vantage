@@ -7,11 +7,11 @@ import { THOUGHT_LABEL } from '../lib/labels'
 import { VAvatar } from './VAvatar'
 
 const KIND_META: Record<ThoughtKind, { icon: LucideIcon; tint: string; text: string }> = {
-  plan: { icon: Compass, tint: 'bg-info/15', text: 'text-info' },
+  plan: { icon: Compass, tint: 'bg-info/15', text: 'text-info-deep' },
   dispatch: { icon: Users, tint: 'bg-primary-tint', text: 'text-primary-deep' },
-  action: { icon: Settings, tint: 'bg-sun-soft', text: 'text-warn' },
-  finding: { icon: Lightbulb, tint: 'bg-ok/15', text: 'text-ok' },
-  reflect: { icon: Search, tint: 'bg-risk/15', text: 'text-risk' },
+  action: { icon: Settings, tint: 'bg-sun-soft', text: 'text-warn-deep' },
+  finding: { icon: Lightbulb, tint: 'bg-ok/15', text: 'text-ok-deep' },
+  reflect: { icon: Search, tint: 'bg-risk/15', text: 'text-risk-deep' },
 }
 
 /** Live thought stream, auto-scrolled to the newest entry. */

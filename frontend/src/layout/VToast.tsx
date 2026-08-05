@@ -36,7 +36,7 @@ export function VToast() {
           className="fixed bottom-5 left-1/2 z-[60] flex max-w-[min(520px,92vw)] -translate-x-1/2 items-start gap-2.5 rounded-card border border-risk/40 bg-card px-4 py-3 shadow-float"
           role="status"
         >
-          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-risk" />
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-risk-deep" />
           <span className="min-w-0 flex-1 text-aux leading-relaxed text-ink-2">
             {toast}
           </span>

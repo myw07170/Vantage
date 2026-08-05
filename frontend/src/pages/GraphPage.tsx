@@ -16,11 +16,13 @@ interface GLink extends d3.SimulationLinkDatum<GNode> {
   target: string | GNode
 }
 
-// Mirrors the design tokens in tailwind.config.js — D3 needs raw values.
+// D3 needs raw colour values rather than classes. These read the same custom
+// properties Tailwind resolves against, so the graph re-themes with everything
+// else instead of drifting from the palette it was copied from.
 const COLOR: Record<string, string> = {
-  report: '#5E7A66',
-  claim: '#7C9885',
-  evidence: '#E0B775',
+  report: 'var(--v-primary-deep-color)',
+  claim: 'var(--v-primary-color)',
+  evidence: 'var(--v-warn-color)',
 }
 const RADIUS: Record<string, number> = { report: 22, claim: 13, evidence: 8 }
 
@@ -96,7 +98,7 @@ export default function GraphPage() {
 
     const link = g
       .append('g')
-      .attr('stroke', '#E3E8E3')
+      .attr('stroke', 'var(--v-line-color)')
       .attr('stroke-width', 1.4)
       .selectAll('line')
       .data(links)
@@ -131,7 +133,7 @@ export default function GraphPage() {
       .append('circle')
       .attr('r', (d) => RADIUS[d.type])
       .attr('fill', (d) => COLOR[d.type])
-      .attr('stroke', '#FFFFFF')
+      .attr('stroke', 'var(--v-card-color)')
       .attr('stroke-width', 2)
       .attr('opacity', 0.92)
 
@@ -141,7 +143,7 @@ export default function GraphPage() {
       .attr('x', (d) => RADIUS[d.type] + 5)
       .attr('y', 4)
       .attr('font-size', (d) => (d.type === 'report' ? 14 : 11))
-      .attr('fill', '#3A413C')
+      .attr('fill', 'var(--v-ink-color)')
 
     node.append('title').text((d) => d.label)
 

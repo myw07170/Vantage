@@ -32,9 +32,9 @@ export function VVerifyReport({ review }: { review?: VerifyReview }) {
   const scoreKeys = Object.keys(review.scores ?? {})
 
   const badge = {
-    pass: { cls: 'bg-ok/15 text-ok', text: '✓ Verified' },
+    pass: { cls: 'bg-ok/15 text-ok-deep', text: '✓ Verified' },
     revised: { cls: 'bg-primary-tint text-primary-deep', text: '✎ Corrected before delivery' },
-    flagged: { cls: 'bg-warn/15 text-warn', text: '⚠ Shipped with open issues' },
+    flagged: { cls: 'bg-warn/15 text-warn-deep', text: '⚠ Shipped with open issues' },
   }[verdict]
 
   const stats = [
@@ -89,7 +89,7 @@ export function VVerifyReport({ review }: { review?: VerifyReview }) {
         <div className="mt-3 flex flex-wrap gap-2">
           {scoreKeys.map((k) => {
             const v = Math.round(review.scores![k] ?? 0)
-            const tone = v >= 80 ? 'text-ok' : v >= 60 ? 'text-warn' : 'text-risk'
+            const tone = v >= 80 ? 'text-ok-deep' : v >= 60 ? 'text-warn-deep' : 'text-risk-deep'
             return (
               <span
                 key={k}
@@ -123,7 +123,7 @@ export function VVerifyReport({ review }: { review?: VerifyReview }) {
         <div className="mt-4">
           <div
             className={`flex items-center gap-1.5 text-tag font-semibold ${
-              majors.length > 0 ? 'text-risk' : 'text-warn'
+              majors.length > 0 ? 'text-risk-deep' : 'text-warn-deep'
             }`}
           >
             <AlertTriangle size={13} /> {plural(open.length, 'issue')} still open at
@@ -163,7 +163,7 @@ function FindingRow({ finding }: { finding: VerifyFinding }) {
     <li className="flex gap-2 text-tag leading-relaxed text-ink-2">
       <span
         className={`mt-0.5 shrink-0 rounded-chip px-1.5 font-semibold ${
-          major ? 'bg-risk/15 text-risk' : 'bg-sun-soft text-warn'
+          major ? 'bg-risk/15 text-risk-deep' : 'bg-sun-soft text-warn-deep'
         }`}
       >
         {finding.severity}

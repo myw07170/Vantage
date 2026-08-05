@@ -30,10 +30,10 @@ export function VFeatureMatrix({ data }: { data: Row[] }) {
                       sf.support === 'full' ? Check : sf.support === 'none' ? X : Minus
                     const tint =
                       sf.support === 'full'
-                        ? 'bg-ok/10 text-ok'
+                        ? 'bg-ok/10 text-ok-deep'
                         : sf.support === 'none'
-                          ? 'bg-risk/10 text-risk'
-                          : 'bg-sun-soft text-warn'
+                          ? 'bg-risk/10 text-risk-deep'
+                          : 'bg-sun-soft text-warn-deep'
                     return (
                       <span
                         key={si}

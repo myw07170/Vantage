@@ -22,12 +22,12 @@ const KIND_META: Record<
   KBKind,
   { label: string; icon: typeof FileText; cls: string }
 > = {
-  claim: { label: 'Claims', icon: Lightbulb, cls: 'bg-ok/15 text-ok' },
-  evidence: { label: 'Evidence', icon: FileText, cls: 'bg-info/15 text-info' },
-  quote: { label: 'Quotes', icon: Quote, cls: 'bg-warn/15 text-warn' },
+  claim: { label: 'Claims', icon: Lightbulb, cls: 'bg-ok/15 text-ok-deep' },
+  evidence: { label: 'Evidence', icon: FileText, cls: 'bg-info/15 text-info-deep' },
+  quote: { label: 'Quotes', icon: Quote, cls: 'bg-warn/15 text-warn-deep' },
   figure: { label: 'Images', icon: ImageIcon, cls: 'bg-primary-tint text-primary-deep' },
-  note: { label: 'Excerpts', icon: StickyNote, cls: 'bg-sun-soft text-warn' },
-  highlight: { label: 'Highlights', icon: TagIcon, cls: 'bg-risk/15 text-risk' },
+  note: { label: 'Excerpts', icon: StickyNote, cls: 'bg-sun-soft text-warn-deep' },
+  highlight: { label: 'Highlights', icon: TagIcon, cls: 'bg-risk/15 text-risk-deep' },
 }
 
 export default function KnowledgePage() {
@@ -90,7 +90,7 @@ export default function KnowledgePage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search saved content, reports or tags…"
-            className="h-11 w-full rounded-btn border border-line bg-card pl-9 pr-3 text-aux text-ink outline-none focus:border-primary"
+            className="h-11 w-full rounded-btn border border-line bg-card pl-9 pr-3 text-aux text-ink outline-none transition-all focus:border-primary focus:shadow-glow"
           />
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -156,7 +156,7 @@ export default function KnowledgePage() {
                         {k.brand && <span className="text-tag text-ink-3">{k.brand}</span>}
                         <button
                           onClick={() => removeFromKB(k.id)}
-                          className="ml-auto text-ink-3 opacity-0 transition-opacity hover:text-risk group-hover:opacity-100"
+                          className="ml-auto text-ink-3 opacity-0 transition-opacity hover:text-risk-deep group-hover:opacity-100"
                           title="Remove from knowledge base"
                           aria-label="Remove from knowledge base"
                         >

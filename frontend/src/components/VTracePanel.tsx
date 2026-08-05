@@ -105,7 +105,7 @@ export function VTracePanel({ traces }: { traces: TraceSpan[] }) {
                           </span>
                         </button>
                         <div className="mt-1 flex flex-wrap items-center gap-2 pl-7 text-tag text-ink-3">
-                          <span className="rounded bg-ok/10 px-1 text-ok">{sp.model}</span>
+                          <span className="rounded bg-ok/10 px-1 text-ok-deep">{sp.model}</span>
                           <span>{num(sp.total_tokens)} tok</span>
                           {ex && <span>· {ex.name}</span>}
                         </div>

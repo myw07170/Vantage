@@ -82,7 +82,7 @@ export function VDataGrid({
                       href={r.source_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-0.5 text-primary hover:underline"
+                      className="inline-flex items-center gap-0.5 text-primary-deep hover:underline"
                     >
                       Link <ExternalLink size={10} />
                     </a>

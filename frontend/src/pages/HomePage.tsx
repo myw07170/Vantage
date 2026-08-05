@@ -149,7 +149,7 @@ export default function HomePage() {
                   title={m.desc}
                   className={`inline-flex h-8 items-center gap-1.5 rounded-chip px-3 text-aux font-medium transition-colors ${
                     active
-                      ? 'bg-primary text-white'
+                      ? 'bg-primary-deep text-white'
                       : 'bg-primary-tint/60 text-ink-2 hover:bg-primary-tint'
                   }`}
                 >
@@ -168,7 +168,7 @@ export default function HomePage() {
             <button
               onClick={() => submit(text)}
               disabled={!text.trim() || submitting}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-primary text-white shadow-card transition-all hover:scale-105 hover:bg-primary-deep active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-primary-deep text-white shadow-card transition-all hover:scale-105 hover:bg-primary-deeper active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
               aria-label="Start research"
             >
               <ArrowUp size={20} />

@@ -123,7 +123,7 @@ export default function ClarifyPage() {
                   value={(answers[q.id] as string) ?? ''}
                   onChange={(e) => setSingle(q.id, e.target.value)}
                   placeholder="Optional — anything else we should know"
-                  className="mt-3 w-full resize-none rounded-btn border border-line bg-bg px-3 py-2 text-aux text-ink outline-none transition-colors focus:border-primary"
+                  className="mt-3 w-full resize-none rounded-btn border border-line bg-bg px-3 py-2 text-aux text-ink outline-none transition-all focus:border-primary focus:shadow-glow"
                 />
               ) : (
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -145,7 +145,7 @@ export default function ClarifyPage() {
                         }
                         className={`h-9 rounded-chip px-4 text-aux font-medium transition-all ${
                           selected
-                            ? 'bg-primary text-white shadow-card'
+                            ? 'bg-primary-deep text-white shadow-card'
                             : 'bg-primary-tint text-primary-deep hover:bg-primary-soft/40'
                         }`}
                       >
@@ -170,11 +170,11 @@ export default function ClarifyPage() {
                       }
                     }}
                     placeholder="Add a competitor we missed — press Enter (comma-separate several)"
-                    className="h-9 min-w-[240px] flex-1 rounded-btn border border-line bg-bg px-3 text-aux text-ink outline-none transition-colors focus:border-primary"
+                    className="h-9 min-w-[240px] flex-1 rounded-btn border border-line bg-bg px-3 text-aux text-ink outline-none transition-all focus:border-primary focus:shadow-glow"
                   />
                   <button
                     onClick={() => addCustom(q.id)}
-                    className="h-9 shrink-0 rounded-btn bg-primary px-4 text-aux font-medium text-white hover:bg-primary-deep"
+                    className="h-9 shrink-0 rounded-btn bg-primary-deep px-4 text-aux font-medium text-white hover:bg-primary-deeper"
                   >
                     Add
                   </button>
@@ -194,7 +194,7 @@ export default function ClarifyPage() {
           <button
             onClick={go}
             disabled={submitting}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-btn bg-primary px-6 font-medium text-white shadow-card transition-all hover:bg-primary-deep hover:shadow-float active:scale-95 disabled:opacity-50"
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-btn bg-primary-deep px-6 font-medium text-white shadow-card transition-all hover:bg-primary-deeper hover:shadow-float active:scale-95 disabled:opacity-50"
           >
             {submitting ? 'Assembling the team…' : 'Start research'}
             <ArrowRight size={18} />

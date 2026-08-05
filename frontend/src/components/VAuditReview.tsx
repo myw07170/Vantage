@@ -25,7 +25,7 @@ export function VAuditReview({ review }: { review?: AuditReview }) {
   const verdictPass = main.verdict !== 'rework'
 
   const scoreColor = (v: number) =>
-    v >= 80 ? 'text-ok' : v >= 60 ? 'text-warn' : 'text-risk'
+    v >= 80 ? 'text-ok-deep' : v >= 60 ? 'text-warn-deep' : 'text-risk-deep'
   const barColor = (v: number) => (v >= 80 ? 'bg-ok' : v >= 60 ? 'bg-warn' : 'bg-risk')
 
   return (
@@ -43,7 +43,7 @@ export function VAuditReview({ review }: { review?: AuditReview }) {
         </div>
         <span
           className={`rounded-chip px-3 py-1 text-tag font-semibold ${
-            verdictPass ? 'bg-ok/15 text-ok' : 'bg-risk/15 text-risk'
+            verdictPass ? 'bg-ok/15 text-ok-deep' : 'bg-risk/15 text-risk-deep'
           }`}
         >
           {verdictPass ? '✓ Approved' : '⟲ Sent back for rework'}
@@ -68,7 +68,7 @@ export function VAuditReview({ review }: { review?: AuditReview }) {
                       </>
                     )}
                     <span className={`font-bold ${scoreColor(cur)}`}>{cur}</span>
-                    {up && <span className="text-ok">↑</span>}
+                    {up && <span className="text-ok-deep">↑</span>}
                   </span>
                 </div>
                 <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-chip bg-line">
@@ -92,7 +92,7 @@ export function VAuditReview({ review }: { review?: AuditReview }) {
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         {main.issues && main.issues.length > 0 && (
           <div>
-            <div className="flex items-center gap-1.5 text-tag font-semibold text-risk">
+            <div className="flex items-center gap-1.5 text-tag font-semibold text-risk-deep">
               <AlertTriangle size={13} /> {plural(main.issues.length, 'problem')} found
             </div>
             <ul className="mt-2 space-y-1.5">
@@ -113,7 +113,7 @@ export function VAuditReview({ review }: { review?: AuditReview }) {
             <ul className="mt-2 space-y-1.5">
               {main.suggestions.map((it, i) => (
                 <li key={i} className="flex gap-2 text-tag leading-relaxed text-ink-2">
-                  <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-ok" />
+                  <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-ok-deep" />
                   <span>{it}</span>
                 </li>
               ))}
@@ -124,7 +124,7 @@ export function VAuditReview({ review }: { review?: AuditReview }) {
 
       {hasRework && (
         <div className="mt-4 flex items-start gap-2 rounded-card bg-sun-soft p-3 text-tag text-ink-2">
-          <ShieldCheck size={14} className="mt-0.5 shrink-0 text-warn" />
+          <ShieldCheck size={14} className="mt-0.5 shrink-0 text-warn-deep" />
           <span>
             The review triggered {plural(review.rework_rounds ?? 0, 'round')} of rework,
             resolving {plural(review.issues_resolved ?? 0, 'issue')} on re-review.

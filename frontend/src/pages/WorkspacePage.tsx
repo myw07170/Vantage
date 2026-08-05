@@ -96,19 +96,19 @@ export default function WorkspacePage() {
       </header>
 
       {streamStatus === 'reconnecting' && (
-        <div className="flex items-center gap-2 bg-warn/10 px-5 py-2 text-aux text-warn">
+        <div className="flex items-center gap-2 bg-warn/10 px-5 py-2 text-aux text-warn-deep">
           <Loader2 size={14} className="animate-spin" /> Connection dropped —
           reconnecting…
         </div>
       )}
       {streamStatus === 'closed' && !finished && !error && (
-        <div className="flex items-center gap-2 bg-risk/10 px-5 py-2 text-aux text-risk">
+        <div className="flex items-center gap-2 bg-risk/10 px-5 py-2 text-aux text-risk-deep">
           <WifiOff size={14} /> Disconnected from the research stream. The run may
           still be finishing — check My reports in a moment.
         </div>
       )}
       {error && (
-        <div className="bg-risk/10 px-5 py-2 text-aux text-risk">{error}</div>
+        <div className="bg-risk/10 px-5 py-2 text-aux text-risk-deep">{error}</div>
       )}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_1fr_360px]">
@@ -150,7 +150,13 @@ export default function WorkspacePage() {
 
         <section className="flex min-h-0 flex-col">
           <div className="flex items-center gap-1.5 border-b border-line px-6 py-3 text-aux font-semibold text-ink">
-            <Sparkles size={15} className="text-primary" /> Live reasoning
+            {/* Breathes only while the stream is open, so the header carries
+                the same signal as the pipeline dots: this is still running. */}
+            <Sparkles
+              size={15}
+              className={`text-primary ${finished ? '' : 'animate-breath'}`}
+            />{' '}
+            Live reasoning
             {progress.queued ? (
               <span className="ml-auto text-tag font-normal text-ink-3">
                 {progress.queued} section(s) queued on the model's rate limit
@@ -179,7 +185,7 @@ export default function WorkspacePage() {
                   animate={{ opacity: 1, scale: 1 }}
                   className="mt-4 rounded-card border border-warn/40 bg-sun-soft p-4"
                 >
-                  <div className="flex items-center gap-1.5 text-aux font-semibold text-warn">
+                  <div className="flex items-center gap-1.5 text-aux font-semibold text-warn-deep">
                     <RotateCcw size={14} /> Sent back for rework
                   </div>
                   <p className="mt-1 text-tag text-ink-2">{reworkMsg.reason}</p>
@@ -215,7 +221,7 @@ export default function WorkspacePage() {
                   </div>
                   <button
                     onClick={() => navigate(`/report/${reportId}`)}
-                    className="h-9 rounded-btn bg-primary px-4 text-aux font-medium text-white hover:bg-primary-deep"
+                    className="h-9 rounded-btn bg-primary-deep px-4 text-aux font-medium text-white hover:bg-primary-deeper"
                   >
                     Open report
                   </button>

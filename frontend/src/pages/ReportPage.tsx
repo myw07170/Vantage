@@ -235,7 +235,7 @@ export default function ReportPage() {
         <p>{error ?? 'Report not found.'}</p>
         <button
           onClick={() => navigate('/')}
-          className="h-10 rounded-btn bg-primary px-5 text-aux font-medium text-white"
+          className="h-10 rounded-btn bg-primary-deep px-5 text-aux font-medium text-white"
         >
           Back to start
         </button>
@@ -296,7 +296,7 @@ export default function ReportPage() {
               >
                 <span
                   className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-chip text-[11px] font-semibold transition-colors ${
-                    active ? 'bg-primary text-white' : 'bg-line/70 text-ink-3'
+                    active ? 'bg-primary-deep text-white' : 'bg-line/70 text-ink-3'
                   }`}
                 >
                   {i + 1}
@@ -373,7 +373,7 @@ export default function ReportPage() {
               onClick={toggleEditMode}
               className={`inline-flex h-9 items-center gap-1.5 rounded-btn px-3 text-aux font-medium backdrop-blur ${
                 editMode
-                  ? 'bg-primary text-white'
+                  ? 'bg-primary-deep text-white'
                   : 'bg-card/90 text-ink-2 hover:text-primary-deep'
               }`}
             >
@@ -485,7 +485,7 @@ export default function ReportPage() {
                 <ul className="mt-4 space-y-2 rounded-card bg-card/60 p-4">
                   {sec.highlights.map((h, i) => (
                     <li key={i} className="flex gap-2 text-aux text-ink-2">
-                      <Sparkles size={15} className="mt-0.5 shrink-0 text-warn" />
+                      <Sparkles size={15} className="mt-0.5 shrink-0 text-warn-deep" />
                       <span>
                         <VCitedText text={h} evIndex={evIndex} onCite={jumpToEvidence} />
                       </span>
@@ -569,7 +569,7 @@ export default function ReportPage() {
                     {refiningSec === sec.id ? 'Working…' : 'Deepen from my notes'}
                   </button>
                   {sec.refined && (
-                    <span className="rounded-chip bg-ok/10 px-2 py-0.5 text-tag text-ok">
+                    <span className="rounded-chip bg-ok/10 px-2 py-0.5 text-tag text-ok-deep">
                       Updated
                     </span>
                   )}
@@ -708,7 +708,7 @@ export default function ReportPage() {
                     </button>
                     <button
                       onClick={() => removeHighlight(rid, h.id)}
-                      className="shrink-0 text-ink-3 opacity-0 transition-opacity hover:text-risk group-hover:opacity-100"
+                      className="shrink-0 text-ink-3 opacity-0 transition-opacity hover:text-risk-deep group-hover:opacity-100"
                       title="Delete note"
                       aria-label="Delete note"
                     >

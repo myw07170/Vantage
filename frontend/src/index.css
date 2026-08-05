@@ -2,30 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Mirrors tailwind.config.js. Only for the handful of places that need a raw
-   value (D3 scales, inline SVG). Prefer Tailwind classes everywhere else. */
+/* Design tokens.
+ *
+ * Colours live here as "R G B" channel triplets; tailwind.config.js wraps them
+ * in rgb(... / <alpha-value>) so opacity modifiers keep working. Redefining a
+ * triplet re-themes the whole app — no component references a hex.
+ *
+ * The `--v-*-color` aliases below are ready-made colours for the few consumers
+ * that need a raw value rather than a Tailwind class (D3 scales, inline SVG).
+ */
 :root {
-  --v-primary: #7c9885;
-  --v-primary-soft: #a8c0a8;
-  --v-primary-tint: #eaf1ea;
-  --v-primary-deep: #5e7a66;
+  --v-primary: 124 152 133;
+  --v-primary-soft: 168 192 168;
+  --v-primary-tint: 234 241 234;
+  --v-primary-deep: 87 115 95;
+  --v-primary-deeper: 76 100 83;
 
-  --v-sun: #f4e2b8;
-  --v-sun-soft: #fbf6e9;
+  --v-sun: 244 226 184;
+  --v-sun-soft: 251 246 233;
 
-  --v-ink: #3a413c;
-  --v-ink-2: #6b746c;
-  --v-ink-3: #9aa39c;
-  --v-line: #e3e8e3;
-  --v-bg: #fafbf9;
-  --v-card: #ffffff;
-  --v-paper: #f4f6f3;
+  --v-ink: 58 65 60;
+  --v-ink-2: 88 95 89;
+  --v-ink-3: 105 115 107;
+  --v-line: 227 232 227;
+  --v-bg: 250 251 249;
+  --v-card: 255 255 255;
+  --v-paper: 244 246 243;
 
-  --v-ok: #8ab58a;
-  --v-warn: #e0b775;
-  --v-risk: #ce9a92;
-  --v-risk-deep: #a8635a;
-  --v-info: #8fa8c0;
+  /* Base tone = the tinted pill behind a chip. `-deep` = the ink on it, same
+     hue, dark enough to clear 4.5:1 against that pill. */
+  --v-ok: 138 181 138;
+  --v-ok-deep: 77 121 77;
+  --v-warn: 224 183 117;
+  --v-warn-deep: 148 104 33;
+  --v-risk: 206 154 146;
+  --v-risk-deep: 164 86 73;
+  --v-info: 143 168 192;
+  --v-info-deep: 80 112 143;
+
+  --v-primary-color: rgb(var(--v-primary));
+  --v-primary-deep-color: rgb(var(--v-primary-deep));
+  --v-sun-color: rgb(var(--v-sun));
+  --v-ink-color: rgb(var(--v-ink));
+  --v-ink-3-color: rgb(var(--v-ink-3));
+  --v-line-color: rgb(var(--v-line));
+  --v-card-color: rgb(var(--v-card));
+  --v-warn-color: rgb(var(--v-warn));
 
   --r-card: 16px;
   --r-btn: 12px;
@@ -50,8 +72,8 @@
 
   body {
     margin: 0;
-    background: var(--v-bg);
-    color: var(--v-ink);
+    background: rgb(var(--v-bg));
+    color: rgb(var(--v-ink));
     font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-size: 15px;
     line-height: 1.7;
@@ -64,16 +86,38 @@
   h3 {
     font-weight: 600;
     letter-spacing: -0.01em;
-    color: var(--v-ink);
+    color: rgb(var(--v-ink));
   }
 
   ::selection {
-    background: var(--v-primary-tint);
+    background: rgb(var(--v-primary-tint));
   }
 
+  /* Named properties rather than `all`: `transition: all` also animates layout
+     and paint properties, which is a jank source on hover-heavy lists. */
   a,
   button {
-    transition: all 0.25s var(--ease);
+    transition:
+      color 0.25s var(--ease),
+      background-color 0.25s var(--ease),
+      border-color 0.25s var(--ease),
+      box-shadow 0.25s var(--ease),
+      opacity 0.25s var(--ease),
+      transform 0.25s var(--ease);
+  }
+
+  /* Keyboard focus ring. `:focus-visible` rather than `:focus`, so pointer
+     users never see it — which is how several call sites came to clear the
+     default outline without replacing it.
+     Scoped to controls that do not style their own focus: text inputs sit
+     inside wrappers with `focus-within` treatments, and a second ring nested
+     inside those reads as a rendering bug. `:where()` keeps specificity at
+     zero so any component can still override. */
+  :where(a, button, [role='button'], summary):focus-visible {
+    outline: none;
+    box-shadow:
+      0 0 0 2px rgb(var(--v-card)),
+      0 0 0 4px rgb(var(--v-primary-deep));
   }
 
   ::-webkit-scrollbar {
@@ -81,37 +125,53 @@
     height: 8px;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--v-line);
+    background: rgb(var(--v-line));
     border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--v-primary-soft);
+    background: rgb(var(--v-primary-soft));
   }
 }
 
 @layer components {
   .v-glass {
-    background: rgba(255, 255, 255, 0.72);
+    background: rgb(var(--v-card) / 0.72);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
   }
 
   .v-card {
-    background: var(--v-card);
+    background: rgb(var(--v-card));
     border-radius: var(--r-card);
     box-shadow: var(--shadow-card);
-    border: 1px solid var(--v-line);
+    border: 1px solid rgb(var(--v-line));
   }
 
   .v-skeleton {
     background: linear-gradient(
       90deg,
-      rgba(227, 232, 227, 0.5) 25%,
-      rgba(227, 232, 227, 0.9) 37%,
-      rgba(227, 232, 227, 0.5) 63%
+      rgb(var(--v-line) / 0.5) 25%,
+      rgb(var(--v-line) / 0.9) 37%,
+      rgb(var(--v-line) / 0.5) 63%
     );
     background-size: 200% 100%;
     animation: shimmer 1.6s linear infinite;
     border-radius: var(--r-btn);
+  }
+}
+
+/* Motion is decoration here — every animation is an entrance, a pulse or a
+ * shimmer, and none of them carry information. Honour the OS setting rather
+ * than making people watch loops they have asked not to see. Framer Motion is
+ * handled separately by <MotionConfig reducedMotion="user"> in main.tsx.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

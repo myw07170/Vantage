@@ -28,7 +28,7 @@ export function VQualityGate({
 
   return (
     <div className="my-6 rounded-card border border-warn/40 bg-sun-soft p-4">
-      <div className="flex items-center gap-1.5 text-aux font-semibold text-warn">
+      <div className="flex items-center gap-1.5 text-aux font-semibold text-warn-deep">
         <RotateCcw size={14} /> Rework loop · before and after
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -42,7 +42,7 @@ export function VQualityGate({
               <div className="mt-1 flex items-center gap-1.5 text-aux">
                 <span className="text-ink-3 line-through">{b}%</span>
                 <ArrowRight size={12} className="text-ink-3" />
-                <span className={`font-bold ${up ? 'text-ok' : 'text-ink'}`}>{a}%</span>
+                <span className={`font-bold ${up ? 'text-ok-deep' : 'text-ink'}`}>{a}%</span>
               </div>
             </div>
           )

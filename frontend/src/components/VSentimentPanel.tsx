@@ -5,8 +5,8 @@ import { PLATFORM_LABEL, PLATFORM_STYLE, SENTIMENT_LABEL } from '../lib/labels'
 import { plural } from '../lib/format'
 
 const SENT_CLS: Record<string, string> = {
-  pos: 'bg-ok/15 text-ok',
-  neg: 'bg-risk/15 text-risk',
+  pos: 'bg-ok/15 text-ok-deep',
+  neg: 'bg-risk/15 text-risk-deep',
   neu: 'bg-ink-3/10 text-ink-3',
 }
 
@@ -47,7 +47,7 @@ export function VSentimentPanel({
       {highlights && highlights.length > 0 && (
         <div className="rounded-card border border-sun/40 bg-gradient-to-br from-sun-soft to-card p-4">
           <div className="mb-3 flex items-center gap-2 text-aux font-semibold text-ink">
-            <Quote size={15} className="text-warn" />
+            <Quote size={15} className="text-warn-deep" />
             What users actually said
           </div>
           <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">

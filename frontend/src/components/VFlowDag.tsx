@@ -50,7 +50,7 @@ export function VFlowDag({ nodes }: { nodes: DAGNode[] }) {
 function NodeDot({ status }: { status: DAGNode['status'] }) {
   if (status === 'done')
     return (
-      <span className="grid h-6 w-6 place-items-center rounded-full bg-primary text-white">
+      <span className="grid h-6 w-6 place-items-center rounded-full bg-primary-deep text-white">
         <Check size={13} strokeWidth={2.5} />
       </span>
     )
@@ -59,14 +59,14 @@ function NodeDot({ status }: { status: DAGNode['status'] }) {
       <motion.span
         animate={{ scale: [1, 1.12, 1] }}
         transition={{ repeat: Infinity, duration: 1.4 }}
-        className="grid h-6 w-6 place-items-center rounded-full bg-primary-tint text-primary"
+        className="grid h-6 w-6 place-items-center rounded-full bg-primary-tint text-primary-deep"
       >
         <Loader2 size={13} className="animate-spin" />
       </motion.span>
     )
   if (status === 'rework')
     return (
-      <span className="grid h-6 w-6 place-items-center rounded-full bg-warn/20 text-warn">
+      <span className="grid h-6 w-6 place-items-center rounded-full bg-warn/20 text-warn-deep">
         <RotateCcw size={13} />
       </span>
     )

@@ -34,7 +34,7 @@ export function VMetricsPanel({ metrics }: { metrics?: ReportMetrics }) {
     {
       icon: Layers,
       label: 'Source coverage',
-      tint: 'text-info',
+      tint: 'text-info-deep',
       value: asNum(cov.coverage_multiple) != null ? `${cov.coverage_multiple}×` : '—',
       sub: `${num(asNum(cov.independent_sources))} independent domains · ${num(
         asNum(cov.platforms_covered),
@@ -44,7 +44,7 @@ export function VMetricsPanel({ metrics }: { metrics?: ReportMetrics }) {
     {
       icon: ShieldCheck,
       label: 'Consistency',
-      tint: 'text-ok',
+      tint: 'text-ok-deep',
       value: pct(con.value),
       sub: `${pct(con.claims_with_evidence_ratio)} of claims sourced · ${pct(
         con.schema_completeness,
@@ -54,7 +54,7 @@ export function VMetricsPanel({ metrics }: { metrics?: ReportMetrics }) {
     {
       icon: Gauge,
       label: 'High confidence',
-      tint: 'text-warn',
+      tint: 'text-warn-deep',
       value: pct(biz.accuracy),
       sub: `${pct(biz.cross_validated_ratio)} cross-validated · ${num(
         asNum(biz.rework_rounds),

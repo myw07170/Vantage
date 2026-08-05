@@ -95,7 +95,7 @@ export default function TracePage() {
               const isOpen = expanded === sp.span_id
               return (
                 <div key={sp.span_id} className="relative">
-                  <span className="absolute -left-[31px] top-3 grid h-5 w-5 place-items-center rounded-full bg-primary text-tag font-bold text-white">
+                  <span className="absolute -left-[31px] top-3 grid h-5 w-5 place-items-center rounded-full bg-primary-deep text-tag font-bold text-white">
                     {sp.seq}
                   </span>
                   <div className="rounded-card border border-line bg-white p-4">
@@ -118,7 +118,7 @@ export default function TracePage() {
                         </div>
                       </div>
                       <div className="shrink-0 text-right text-tag text-ink-3">
-                        <div className="truncate rounded bg-ok/10 px-1.5 text-ok">
+                        <div className="truncate rounded bg-ok/10 px-1.5 text-ok-deep">
                           {sp.model}
                         </div>
                         <div className="mt-0.5">

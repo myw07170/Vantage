@@ -7,9 +7,9 @@ import { plural } from '../lib/format'
 import { VAvatar } from './VAvatar'
 
 const CONF_META = {
-  high: { cls: 'bg-ok/15 text-ok', icon: ShieldCheck },
-  medium: { cls: 'bg-warn/15 text-warn', icon: ShieldCheck },
-  low: { cls: 'bg-risk/15 text-risk', icon: ShieldAlert },
+  high: { cls: 'bg-ok/15 text-ok-deep', icon: ShieldCheck },
+  medium: { cls: 'bg-warn/15 text-warn-deep', icon: ShieldCheck },
+  low: { cls: 'bg-risk/15 text-risk-deep', icon: ShieldAlert },
   unverified: { cls: 'bg-ink-3/15 text-ink-3', icon: ShieldQuestion },
 } as const
 

@@ -1,31 +1,47 @@
 /** @type {import('tailwindcss').Config} */
 
-// The single source of truth for Vantage's design tokens. index.css mirrors
-// these as CSS custom properties for the few places that need raw values;
-// nothing else should hardcode a hex.
+// The single source of truth for Vantage's design tokens.
+//
+// Every colour resolves through a CSS custom property holding an "R G B"
+// triplet, so a theme can be swapped by redefining the variables in index.css
+// without touching a component. The `<alpha-value>` placeholder is what keeps
+// Tailwind's opacity modifiers (`bg-ok/15`, `border-line/60`) working through
+// the indirection.
+const c = (name) => `rgb(var(--v-${name}) / <alpha-value>)`
+
 const palette = {
-  primary: '#7C9885',
-  'primary-soft': '#A8C0A8',
-  'primary-tint': '#EAF1EA',
-  'primary-deep': '#5E7A66',
-  sun: '#F4E2B8',
-  'sun-soft': '#FBF6E9',
-  ink: '#3A413C',
-  'ink-2': '#6B746C',
-  'ink-3': '#9AA39C',
-  line: '#E3E8E3',
-  bg: '#FAFBF9',
-  card: '#FFFFFF',
+  primary: c('primary'),
+  'primary-soft': c('primary-soft'),
+  'primary-tint': c('primary-tint'),
+  // Text-on-tint and the primary button fill. `primary` itself only reaches
+  // 3.1:1 under white text, so it is a surface and accent colour, not a fill
+  // for anything carrying a label.
+  'primary-deep': c('primary-deep'),
+  'primary-deeper': c('primary-deeper'),
+  sun: c('sun'),
+  'sun-soft': c('sun-soft'),
+  ink: c('ink'),
+  'ink-2': c('ink-2'),
+  'ink-3': c('ink-3'),
+  line: c('line'),
+  bg: c('bg'),
+  card: c('card'),
   // Inset surface — sits one step back from `card`, used for code blocks,
   // trace panels, data grids and quote wells.
-  paper: '#F4F6F3',
-  ok: '#8AB58A',
-  warn: '#E0B775',
-  risk: '#CE9A92',
-  // Deepened `risk`, same hue. Needed because white text on `risk` itself only
-  // reaches 2.4:1 — fine as a tint behind dark text, not as a button fill.
-  'risk-deep': '#A8635A',
-  info: '#8FA8C0',
+  paper: c('paper'),
+
+  // Semantic pairs. The base tone is a surface: it makes the tinted pill behind
+  // a status chip. The `-deep` tone is the ink: same hue, dark enough to reach
+  // 4.5:1 against that pill. Using a base tone as text is the mistake this
+  // split exists to prevent.
+  ok: c('ok'),
+  'ok-deep': c('ok-deep'),
+  warn: c('warn'),
+  'warn-deep': c('warn-deep'),
+  risk: c('risk'),
+  'risk-deep': c('risk-deep'),
+  info: c('info'),
+  'info-deep': c('info-deep'),
 }
 
 export default {
@@ -44,7 +60,7 @@ export default {
       boxShadow: {
         card: '0 4px 24px rgba(124,152,133,0.08)',
         float: '0 8px 40px rgba(124,152,133,0.14)',
-        glow: '0 0 0 4px rgba(124,152,133,0.12)',
+        glow: '0 0 0 4px rgb(var(--v-primary) / 0.12)',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],

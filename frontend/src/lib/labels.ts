@@ -40,20 +40,26 @@ export const SOURCE_LABEL: Record<string, string> = {
 
 export const sourceLabel = (s: string) => SOURCE_LABEL[s] ?? s
 
-/** Tailwind classes per source type, for evidence badges. */
+/** Tailwind classes per source type, for evidence badges.
+ *
+ * Pill backgrounds are the light tone; labels are the matching `-deep` tone.
+ * A badge set in its own base colour measures under 2.2:1 against its pill,
+ * which is the least readable text in the product on the elements carrying its
+ * most important signal.
+ */
 export const SOURCE_STYLE: Record<string, string> = {
   official: 'bg-primary-tint text-primary-deep',
   sec_filing: 'bg-primary-tint text-primary-deep',
-  analyst: 'bg-sun-soft text-warn',
-  news: 'bg-sun-soft text-warn',
-  review: 'bg-[#EEF2F6] text-info',
-  reddit: 'bg-[#FDEDE8] text-[#C4552C]',
-  hackernews: 'bg-[#FBF0E6] text-[#B4622A]',
-  youtube: 'bg-[#FBEAEA] text-[#B5433F]',
+  analyst: 'bg-sun-soft text-warn-deep',
+  news: 'bg-sun-soft text-warn-deep',
+  review: 'bg-info/15 text-info-deep',
+  reddit: 'bg-[#FDEDE8] text-[#9C3F1E]',
+  hackernews: 'bg-[#FBF0E6] text-[#8A4A1F]',
+  youtube: 'bg-[#FBEAEA] text-[#8E3532]',
   x: 'bg-[#EDEEF0] text-ink-2',
-  forum: 'bg-[#EEF2F6] text-info',
-  web: 'bg-[#F0F2F0] text-ink-3',
-  unknown: 'bg-[#F0F2F0] text-ink-3',
+  forum: 'bg-info/15 text-info-deep',
+  web: 'bg-paper text-ink-2',
+  unknown: 'bg-paper text-ink-2',
 }
 
 /** Three buckets used by the dashboard's source-mix breakdown. */
@@ -115,9 +121,9 @@ export const CONFIDENCE_LABEL: Record<Confidence, string> = {
 
 export const CONFIDENCE_STYLE: Record<Confidence, string> = {
   high: 'bg-primary-tint text-primary-deep',
-  medium: 'bg-sun-soft text-warn',
-  low: 'bg-[#F5EDEC] text-risk',
-  unverified: 'bg-[#F0F2F0] text-ink-3',
+  medium: 'bg-sun-soft text-warn-deep',
+  low: 'bg-risk/15 text-risk-deep',
+  unverified: 'bg-paper text-ink-2',
 }
 
 /* ── Thought stream kinds ────────────────────────────────────────────────── */

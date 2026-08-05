@@ -222,7 +222,7 @@ export default function DashboardPage() {
           action={
             <button
               onClick={() => navigate('/')}
-              className="inline-flex h-11 items-center gap-2 rounded-btn bg-primary px-6 font-medium text-white shadow-card hover:bg-primary-deep"
+              className="inline-flex h-11 items-center gap-2 rounded-btn bg-primary-deep px-6 font-medium text-white shadow-card hover:bg-primary-deeper"
             >
               Start research
             </button>
@@ -258,7 +258,7 @@ export default function DashboardPage() {
               icon={ShieldCheck}
               value={stats!.fact_accuracy}
               unit="%"
-              color="text-ok"
+              color="text-ok-deep"
               label="Cross-validated"
               tip="Share of claims corroborated by two or more independent domains."
             />
@@ -288,7 +288,7 @@ export default function DashboardPage() {
                 />
                 <ImpactCard
                   icon={Zap}
-                  color="text-warn"
+                  color="text-warn-deep"
                   value={stats!.avg_efficiency ?? 0}
                   unit="×"
                   label="Average speed-up"
@@ -296,7 +296,7 @@ export default function DashboardPage() {
                 />
                 <ImpactCard
                   icon={Layers}
-                  color="text-ok"
+                  color="text-ok-deep"
                   value={stats!.avg_coverage ?? 0}
                   unit="×"
                   label="Source coverage"
@@ -304,7 +304,7 @@ export default function DashboardPage() {
                 />
                 <ImpactCard
                   icon={Activity}
-                  color="text-info"
+                  color="text-info-deep"
                   value={Math.round((stats!.total_tokens ?? 0) / 1000)}
                   unit="K"
                   label="Tokens used"
@@ -611,11 +611,11 @@ export default function DashboardPage() {
                     onChange={(e) => setSubQuery(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleCreateSub()}
                     placeholder="e.g. Figma vs Framer positioning"
-                    className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-bg px-3 text-aux text-ink outline-none focus:border-primary-soft"
+                    className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-bg px-3 text-aux text-ink outline-none transition-all focus:border-primary focus:shadow-glow-soft"
                   />
                   <button
                     onClick={handleCreateSub}
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-btn bg-primary text-white hover:bg-primary-deep"
+                    className="grid h-10 w-10 shrink-0 place-items-center rounded-btn bg-primary-deep text-white hover:bg-primary-deeper"
                     aria-label="Add to watchlist"
                   >
                     <BellPlus size={16} />
@@ -639,7 +639,7 @@ export default function DashboardPage() {
                           </div>
                           <button
                             onClick={() => handleDeleteSub(s.sub_id)}
-                            className="shrink-0 text-ink-3 hover:text-warn"
+                            className="shrink-0 text-ink-3 hover:text-warn-deep"
                             aria-label="Remove"
                           >
                             <Trash2 size={14} />

@@ -44,7 +44,7 @@ export default function LibraryPage() {
         </div>
         <button
           onClick={() => navigate('/')}
-          className="inline-flex h-11 items-center gap-2 rounded-btn bg-primary px-5 font-medium text-white shadow-card transition-all hover:bg-primary-deep hover:shadow-float"
+          className="inline-flex h-11 items-center gap-2 rounded-btn bg-primary-deep px-5 font-medium text-white shadow-card transition-all hover:bg-primary-deeper hover:shadow-float"
         >
           <Plus size={18} /> New research
         </button>
@@ -64,7 +64,7 @@ export default function LibraryPage() {
           action={
             <button
               onClick={() => navigate('/')}
-              className="inline-flex h-11 items-center gap-2 rounded-btn bg-primary px-6 font-medium text-white shadow-card hover:bg-primary-deep"
+              className="inline-flex h-11 items-center gap-2 rounded-btn bg-primary-deep px-6 font-medium text-white shadow-card hover:bg-primary-deeper"
             >
               <Plus size={18} /> Start research
             </button>
@@ -81,7 +81,7 @@ export default function LibraryPage() {
             <motion.div
               key={r.id}
               variants={fadeUp}
-              className="group relative flex flex-col overflow-hidden rounded-card border border-line/60 bg-card text-left shadow-card transition-all hover:-translate-y-1 hover:shadow-float"
+              className="group relative flex flex-col overflow-hidden rounded-card border border-line/60 bg-card text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-float"
             >
               {/* Sibling of the card's own button, not a child — nesting one
                   button inside another is invalid and swallows the click. */}
