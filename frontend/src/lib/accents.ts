@@ -55,6 +55,21 @@ export const ACCENT_WELL: Record<Accent, string> = {
   rose: 'bg-rose-tint text-rose-deep',
 }
 
+/**
+ * Card surface — the `-tint` step held back to 40%, so a whole grid can be
+ * coloured without the page turning into a paint chart. Barely more than a
+ * breath of hue, which is the point: it has to stay lighter than a full-strength
+ * `-tint` badge sitting on top of it, or the badge stops reading as a badge.
+ */
+export const ACCENT_CARD: Record<Accent, string> = {
+  blue: 'bg-blue-tint/40',
+  indigo: 'bg-indigo-tint/40',
+  violet: 'bg-violet-tint/40',
+  orchid: 'bg-orchid-tint/40',
+  pink: 'bg-pink-tint/40',
+  rose: 'bg-rose-tint/40',
+}
+
 /** Pastel surface only, for washes that carry their own text colour. */
 export const ACCENT_TINT: Record<Accent, string> = {
   blue: 'bg-blue-tint',

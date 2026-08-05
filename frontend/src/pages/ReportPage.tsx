@@ -357,7 +357,7 @@ export default function ReportPage() {
         </div>
 
         <div className="border-b border-line bg-card/60">
-          <div className="mx-auto grid max-w-3xl grid-cols-2 gap-px px-6 sm:grid-cols-4">
+          <div className="mx-auto grid max-w-article grid-cols-2 gap-px px-6 sm:grid-cols-4">
             {metrics.map((m, i) => (
               <div key={i} className="flex flex-col items-center gap-1 py-5 text-center">
                 <m.icon size={16} className="text-primary" />
@@ -374,7 +374,7 @@ export default function ReportPage() {
           </div>
         </div>
 
-        <article ref={articleRef} className="relative mx-auto max-w-3xl px-6 py-10">
+        <article ref={articleRef} className="relative mx-auto max-w-article px-6 py-10">
           <VSelectionToolbar
             containerRef={articleRef}
             enabled

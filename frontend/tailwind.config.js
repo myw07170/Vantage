@@ -107,6 +107,10 @@ export default {
       maxWidth: {
         content: '1440px',
         read: '760px',
+        // The report's reading column — 1.1x Tailwind's `3xl` (768px), which it
+        // used to borrow. Named rather than arbitrary because the metrics band
+        // above the article has to track it exactly.
+        article: '880px',
       },
       transitionTimingFunction: {
         vantage: 'cubic-bezier(.4,0,.2,1)',

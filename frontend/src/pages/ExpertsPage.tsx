@@ -6,7 +6,7 @@ import { useExpertStore } from '../store/expertStore'
 import { DomainIcon } from '../components/DomainIcon'
 import { VAvatar } from '../components/VAvatar'
 import { VEmpty } from '../components/ui'
-import { ACCENT_CHIP, LEVEL_ACCENT } from '../lib/accents'
+import { ACCENT_CARD, ACCENT_WELL, LEVEL_ACCENT } from '../lib/accents'
 import { fadeUp, stagger } from '../lib/motion'
 import type { Expert, ExpertLevel } from '../types'
 
@@ -26,10 +26,25 @@ const LEVEL_TABS: {
 // One accent per tier. Three tints of the same colour made the roster look
 // uniform; three hues make the decision, strategy and specialist tiers legible
 // at a glance across the grid.
+// The badge is the full-strength tint, not the 15% chip it used to be: on a
+// white card the chip cleared 4.5:1, but tinting the card under it costs ~0.4
+// and drops an 11px label below the line. The solid step buys that back and
+// keeps the badge a shade deeper than the card it sits on.
 const LEVEL_BG: Record<ExpertLevel, string> = {
-  L1: ACCENT_CHIP[LEVEL_ACCENT.L1],
-  L2: ACCENT_CHIP[LEVEL_ACCENT.L2],
-  L3: ACCENT_CHIP[LEVEL_ACCENT.L3],
+  L1: ACCENT_WELL[LEVEL_ACCENT.L1],
+  L2: ACCENT_WELL[LEVEL_ACCENT.L2],
+  L3: ACCENT_WELL[LEVEL_ACCENT.L3],
+}
+
+// The card carries its tier's hue too, two steps paler than the badge. Tier was
+// previously legible only from a 5mm chip in the corner; on a grid of fifty-two
+// white cards that is a thing you read, not a thing you see. The wash makes the
+// three tiers group at a glance while staying quiet enough that the avatars,
+// not the backgrounds, are what the page is made of.
+const LEVEL_CARD: Record<ExpertLevel, string> = {
+  L1: ACCENT_CARD[LEVEL_ACCENT.L1],
+  L2: ACCENT_CARD[LEVEL_ACCENT.L2],
+  L3: ACCENT_CARD[LEVEL_ACCENT.L3],
 }
 
 function ExpertCard({ expert, onClick }: { expert: Expert; onClick: () => void }) {
@@ -37,7 +52,9 @@ function ExpertCard({ expert, onClick }: { expert: Expert; onClick: () => void }
     <motion.button
       variants={fadeUp}
       onClick={onClick}
-      className="group relative flex flex-col items-center rounded-card border border-line/60 bg-card p-4 text-center shadow-card transition-all hover:-translate-y-0.5 hover:shadow-float"
+      className={`group relative flex flex-col items-center rounded-card border border-line/60 p-4 text-center shadow-card transition-all hover:-translate-y-0.5 hover:shadow-float ${
+        LEVEL_CARD[expert.level]
+      }`}
     >
       <span
         className={`absolute right-2.5 top-2.5 inline-flex h-5 items-center gap-1 rounded-chip px-2 text-tag font-medium ${

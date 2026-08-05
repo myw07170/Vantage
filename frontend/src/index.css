@@ -25,12 +25,18 @@
   --v-paper: 246 242 240;
 
   /* The brand blue: the arc's `blue`, deepened for UI use. `primary` is a mark
-     and a surface; anything carrying a white label uses `primary-deep`. */
-  --v-primary: 108 146 189;
-  --v-primary-soft: 160 183 210;
-  --v-primary-tint: 225 235 246;
-  --v-primary-deep: 67 106 150;
-  --v-primary-deeper: 61 97 137;
+     and a surface; anything carrying a white label uses `primary-deep`.
+     A vivid azure — hue 206 at 80% saturation, which is as bright as this hue
+     gets while `primary` still holds 3:1 as a mark on the page (3.12:1).
+     Saturation is the only free variable here: past l=53% the blue goes pale
+     against paper and the icons drawn in it stop being legible, so vividness
+     comes out of chroma rather than lightness. `primary-deep` keeps its two
+     jobs — white labels (5.4:1) and its own text on `primary-tint` (4.7:1). */
+  --v-primary: 39 148 231;
+  --v-primary-soft: 123 192 244;
+  --v-primary-tint: 228 243 254;
+  --v-primary-deep: 35 111 169;
+  --v-primary-deeper: 24 89 139;
 
   /* Amber surfaces for caution panels and the `Important` highlight. */
   --v-sun: 232 210 159;
@@ -48,25 +54,32 @@
                in chips a few pixels tall.
         base   solid mark — chart series, dots, bars. ~0.255 luminance, which
                holds 3:1 against the page.
-       -deep   ink, dark enough for 4.5:1 on either lighter step. */
-  --v-blue-tint: 225 235 246;
-  --v-blue: 108 141 179;
-  --v-blue-deep: 74 106 143;
-  --v-indigo-tint: 232 232 248;
-  --v-indigo: 133 133 192;
-  --v-indigo-deep: 95 95 173;
-  --v-violet-tint: 239 231 248;
-  --v-violet: 155 126 188;
-  --v-violet-deep: 124 87 167;
-  --v-orchid-tint: 246 228 247;
-  --v-orchid: 179 116 183;
-  --v-orchid-deep: 146 78 151;
-  --v-pink-tint: 247 229 240;
-  --v-pink: 184 117 157;
-  --v-pink-deep: 154 79 124;
-  --v-rose-tint: 248 229 232;
-  --v-rose: 186 120 131;
-  --v-rose-deep: 157 80 93;
+       -deep   ink, dark enough for 4.5:1 on either lighter step.
+
+     The arc runs saturated — 60-80%, blue and pink the most so, since those two
+     are what the product reads as. Each base was found by taking the hue as
+     light as it can go while still clearing 3:1 against paper, which is why the
+     lightnesses differ per hue (l=53% for blue, l=71% for indigo) and the
+     contrasts do not: 3.07-3.16:1 across all six, one perceived weight. The
+     deeps sit at 5.4-5.6:1 on paper and 4.55-4.73:1 on their own tint. */
+  --v-blue-tint: 228 243 254;
+  --v-blue: 39 148 231;
+  --v-blue-deep: 35 111 169;
+  --v-indigo-tint: 229 229 253;
+  --v-indigo: 129 133 233;
+  --v-indigo-deep: 84 88 212;
+  --v-violet-tint: 243 229 253;
+  --v-violet: 177 115 222;
+  --v-violet-deep: 144 62 204;
+  --v-orchid-tint: 252 229 253;
+  --v-orchid: 210 100 216;
+  --v-orchid-deep: 171 47 177;
+  --v-pink-tint: 254 228 241;
+  --v-pink: 229 97 163;
+  --v-pink-deep: 188 47 117;
+  --v-rose-tint: 253 229 233;
+  --v-rose: 228 103 124;
+  --v-rose-deep: 193 51 75;
 
   /* ── Status ────────────────────────────────────────────────────────────────
      The only colours off the arc, and only where meaning demands it. `ok` is a
