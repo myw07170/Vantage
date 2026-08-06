@@ -21,6 +21,7 @@ import { VAgentStream } from '../components/VAgentStream'
 import { VEvidenceFeed } from '../components/VEvidenceFeed'
 import { VTracePanel } from '../components/VTracePanel'
 import { VAvatar } from '../components/VAvatar'
+import { VLogo } from '../components/VLogo'
 import { VCountUp } from '../components/ui'
 import { plural } from '../lib/format'
 import { ACCENT_TEXT } from '../lib/accents'
@@ -68,9 +69,7 @@ export default function WorkspacePage() {
         >
           <ChevronLeft size={20} />
         </button>
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-btn bg-primary-tint text-primary">
-          <Compass size={18} strokeWidth={1.8} />
-        </span>
+        <VLogo size={32} alt="Vantage" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-aux font-medium text-ink">
             {query || 'Competitive research'}

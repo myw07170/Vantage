@@ -1,3 +1,5 @@
+<img src="frontend/public/brand/vantage-logo.png" alt="" width="112" />
+
 # Vantage · AI Competitive Intelligence
 
 > Every conclusion carries its source.

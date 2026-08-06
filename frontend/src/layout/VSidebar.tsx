@@ -16,6 +16,7 @@ import { ACCENT_NAV, ROUTE_ACCENT } from '../lib/accents'
 import { useReportStore } from '../store/reportStore'
 import { useUIStore } from '../store/uiStore'
 import { VSkeleton } from '../components/ui'
+import { VLogo } from '../components/VLogo'
 
 const navItems = [
   { to: '/', label: 'New research', icon: Home, end: true },
@@ -82,9 +83,10 @@ export default function VSidebar() {
           title={collapsed ? 'Vantage · new research' : undefined}
           className="flex items-center gap-2.5"
         >
-          <span className="grid h-9 w-9 place-items-center rounded-btn bg-primary-tint text-primary">
-            <Compass size={22} strokeWidth={1.8} />
-          </span>
+          {/* Labelled only in the rail: at full width the wordmark beside it
+              already names the app, and two readings of "Vantage" in a row is
+              a worse result than a decorative image. */}
+          <VLogo size={36} alt={collapsed ? 'Vantage' : ''} />
           {!collapsed && (
             <span className="text-[20px] font-semibold tracking-tight text-ink">
               Vantage

@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Compass, ArrowRight, SkipForward } from 'lucide-react'
+import { ArrowRight, SkipForward } from 'lucide-react'
 import type { ClarifyQuestion } from '../types'
 import { submitClarify } from '../lib/api'
 import { VSunGlow } from '../components/ui'
+import { VLogo } from '../components/VLogo'
 import { fadeUp, stagger } from '../lib/motion'
 
 interface NavState {
@@ -79,9 +80,7 @@ export default function ClarifyPage() {
           animate="animate"
           className="flex items-center gap-2.5"
         >
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-btn bg-primary-tint text-primary">
-            <Compass size={22} strokeWidth={1.8} />
-          </span>
+          <VLogo size={40} alt="Vantage" />
           <div>
             <div className="text-h3 text-ink">A few questions before we start</div>
             <div className="text-aux text-ink-2">

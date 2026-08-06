@@ -7,7 +7,6 @@ import {
   ShieldCheck,
   Layers,
   TrendingUp,
-  Compass,
   Zap,
   Gem,
   Crown,
@@ -15,6 +14,7 @@ import {
 } from 'lucide-react'
 import { VSunGlow } from '../components/ui'
 import { VAvatar } from '../components/VAvatar'
+import { VLogo } from '../components/VLogo'
 import { fadeUp, stagger } from '../lib/motion'
 import { useExpertStore } from '../store/expertStore'
 import { createTask } from '../lib/api'
@@ -118,7 +118,7 @@ export default function HomePage() {
         >
           What are we researching?
           <span className="ml-2 inline-block align-middle">
-            <Compass className="inline text-primary" size={34} />
+            <VLogo size={42} className="inline" />
           </span>
         </motion.h1>
         <motion.p
