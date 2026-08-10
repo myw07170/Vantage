@@ -13,6 +13,16 @@ export type HighlightColor = 'sun' | 'ok' | 'risk' | 'info'
 export interface Highlight {
   id: string
   sectionId: string
+  /**
+   * Identifies the exact string of prose the highlight sits in. Absent on
+   * highlights saved before anchoring existed — those are re-found by text
+   * search across the section instead.
+   */
+  blockId?: string
+  /** Offsets into that block's source text, citation markers included. */
+  start?: number
+  end?: number
+  /** The source slice, markers and all. Strip them for display. */
   text: string
   color: HighlightColor
   comment: string

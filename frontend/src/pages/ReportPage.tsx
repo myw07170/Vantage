@@ -26,6 +26,8 @@ import {
 import { useReportStore } from '../store/reportStore'
 import { useAnnotationStore } from '../store/annotationStore'
 import type { HighlightColor } from '../store/annotationStore'
+import { stripCitations } from '../lib/selection'
+import type { SelectionHit } from '../lib/selection'
 import { VChart } from '../components/VChart'
 import { VClaimCard } from '../components/VClaimCard'
 import { VSentimentPanel } from '../components/VSentimentPanel'
@@ -122,6 +124,16 @@ export default function ReportPage() {
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  /** Scroll to the marked passage itself, falling back to its section. */
+  function jumpToHighlight(id: string, sectionId: string) {
+    const mark = articleRef.current?.querySelector(`[data-highlight-id="${id}"]`)
+    if (mark) {
+      mark.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    jumpTo(sectionId)
+  }
+
   function jumpToEvidence(ids: string[]) {
     if (ids[0])
       document
@@ -136,11 +148,14 @@ export default function ReportPage() {
     if (!current) return
     const notes = (annotations[rid]?.highlights ?? [])
       .filter((h) => h.sectionId === sectionId)
-      .map((h) =>
-        h.comment
-          ? `${h.comment} (regarding: ${truncate(h.text, 60)})`
-          : `Go deeper on: ${truncate(h.text, 80)}`,
-      )
+      .map((h) => {
+        // The stored text is the source slice; the citation markers in it are
+        // noise to a writer being asked to go deeper.
+        const quoted = stripCitations(h.text)
+        return h.comment
+          ? `${h.comment} (regarding: ${truncate(quoted, 60)})`
+          : `Go deeper on: ${truncate(quoted, 80)}`
+      })
     if (notes.length === 0) {
       flash('Highlight or annotate something in this section first')
       return
@@ -185,14 +200,58 @@ export default function ReportPage() {
     })
   }
 
-  function handleHighlight(sectionId: string, text: string, color: HighlightColor) {
-    addHighlight(rid, { sectionId, text, color, comment: '' })
+  /**
+   * A selection can span several paragraphs; each one gets its own anchored
+   * highlight so every part of it is actually marked in place.
+   */
+  function annotate(
+    hits: SelectionHit[],
+    text: string,
+    sectionId: string,
+    color: HighlightColor,
+    comment: string,
+  ) {
+    if (hits.length === 0) {
+      // Nothing anchorable under the cursor — a chart label, a table cell. Keep
+      // it as a note so it still reaches the sidebar and section refine, and say
+      // so rather than dropping a highlight that would never appear.
+      addHighlight(rid, { sectionId, text, color, comment })
+      flash('Saved as a note — this passage cannot be marked inline')
+      return
+    }
+    for (const h of hits) {
+      addHighlight(rid, {
+        sectionId: h.sectionId || sectionId,
+        blockId: h.blockId,
+        start: h.start,
+        end: h.end,
+        text: h.text,
+        color,
+        comment,
+      })
+    }
   }
 
-  function handleComment(sectionId: string, text: string) {
+  function handleHighlight(
+    hits: SelectionHit[],
+    text: string,
+    sectionId: string,
+    color: HighlightColor,
+  ) {
+    annotate(hits, text, sectionId, color, '')
+  }
+
+  function handleComment(hits: SelectionHit[], text: string, sectionId: string) {
     const comment = window.prompt('Add a note:', '')
-    if (comment != null)
-      addHighlight(rid, { sectionId, text, color: 'info', comment: comment.trim() })
+    if (comment != null) annotate(hits, text, sectionId, 'info', comment.trim())
+  }
+
+  /**
+   * Highlights belonging to one block. Ones saved before anchoring existed carry
+   * no `blockId`, so they stay section-wide and are re-found by text search.
+   */
+  function highlightsFor(blockId: string, sectionId: string) {
+    return reportHls.filter((h) => (h.blockId ? h.blockId === blockId : h.sectionId === sectionId))
   }
 
   function handleSaveSelectionKB(sectionId: string, text: string) {
@@ -415,10 +474,12 @@ export default function ReportPage() {
                   <Lightbulb size={18} className="mt-0.5 shrink-0 text-primary-deep" />
                   <VEditableBlock
                     as="p"
+                    blockId={`${sec.id}-takeaway`}
                     value={getEdit(rid, `${sec.id}-takeaway`) ?? sec.key_takeaway}
                     editable={editMode}
                     onSave={(t) => setEdit(rid, `${sec.id}-takeaway`, t)}
                     className="text-body font-medium text-ink"
+                    highlights={highlightsFor(`${sec.id}-takeaway`, sec.id)}
                     evIndex={evIndex}
                     onCite={jumpToEvidence}
                   />
@@ -430,11 +491,12 @@ export default function ReportPage() {
                   <VEditableBlock
                     key={i}
                     as="p"
+                    blockId={`${sec.id}-p${i}`}
                     value={getEdit(rid, `${sec.id}-p${i}`) ?? p}
                     editable={editMode}
                     onSave={(t) => setEdit(rid, `${sec.id}-p${i}`, t)}
                     className="text-body leading-relaxed text-ink-2"
-                    highlights={reportHls.filter((h) => h.sectionId === sec.id)}
+                    highlights={highlightsFor(`${sec.id}-p${i}`, sec.id)}
                     evIndex={evIndex}
                     onCite={jumpToEvidence}
                   />
@@ -447,7 +509,13 @@ export default function ReportPage() {
                     <li key={i} className="flex gap-2 text-aux text-ink-2">
                       <Sparkles size={15} className="mt-0.5 shrink-0 text-warn-deep" />
                       <span>
-                        <VCitedText text={h} evIndex={evIndex} onCite={jumpToEvidence} />
+                        <VCitedText
+                          text={h}
+                          evIndex={evIndex}
+                          onCite={jumpToEvidence}
+                          blockId={`${sec.id}-h${i}`}
+                          highlights={highlightsFor(`${sec.id}-h${i}`, sec.id)}
+                        />
                       </span>
                     </li>
                   ))}
@@ -458,7 +526,12 @@ export default function ReportPage() {
                 <div className="mt-5 space-y-3">
                   {sec.claims.map((c) => (
                     <div key={c.claim_id} className="group/claim relative">
-                      <VClaimCard claim={c} onCite={jumpToEvidence} />
+                      <VClaimCard
+                        claim={c}
+                        onCite={jumpToEvidence}
+                        blockId={`${sec.id}-claim-${c.claim_id}`}
+                        highlights={highlightsFor(`${sec.id}-claim-${c.claim_id}`, sec.id)}
+                      />
                       <button
                         onClick={() => saveClaimToKB(c.text, c.evidence_ids)}
                         title="Save to knowledge base"
@@ -661,10 +734,10 @@ export default function ReportPage() {
                       className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${HL_DOT[h.color]}`}
                     />
                     <button
-                      onClick={() => jumpTo(h.sectionId)}
+                      onClick={() => jumpToHighlight(h.id, h.sectionId)}
                       className="flex-1 text-left text-tag leading-relaxed text-ink-2 hover:text-primary-deep"
                     >
-                      <span className="line-clamp-3">{h.text}</span>
+                      <span className="line-clamp-3">{stripCitations(h.text)}</span>
                     </button>
                     <button
                       onClick={() => removeHighlight(rid, h.id)}

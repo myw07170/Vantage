@@ -1,11 +1,16 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { Check, X } from 'lucide-react'
 import type { HighlightColor } from '../store/annotationStore'
+import { BLOCK_ATTR, CITE_ATTR, citeRe, flatten, stripCitations } from '../lib/selection'
 
 export interface InlineHighlight {
+  id?: string
   text: string
   color: HighlightColor
   comment?: string
+  /** Offsets into this block's source string; absent on legacy highlights. */
+  start?: number
+  end?: number
 }
 
 const MARK_CLS: Record<HighlightColor, string> = {
@@ -15,13 +20,6 @@ const MARK_CLS: Record<HighlightColor, string> = {
   info: 'bg-info/40',
 }
 
-/**
- * Inline citation markers as the writer emits them: `[e_2a862152]`, or several
- * ids in one bracket. The verify stage has already dropped any id that matches
- * no evidence, so anything reaching here resolves.
- */
-const CITE_RE = /\[(e_[0-9a-f]{4,20}(?:\s*,\s*e_[0-9a-f]{4,20})*)\]/gi
-
 /** Replace citation markers in a plain string with clickable source chips. */
 function renderCitations(
   value: string,
@@ -29,11 +27,11 @@ function renderCitations(
   onCite: (ids: string[]) => void,
   keyPrefix: string,
 ): React.ReactNode {
-  CITE_RE.lastIndex = 0
+  const re = citeRe()
   const out: React.ReactNode[] = []
   let pos = 0
   let m: RegExpExecArray | null
-  while ((m = CITE_RE.exec(value)) !== null) {
+  while ((m = re.exec(value)) !== null) {
     // An id this report does not carry stays as written rather than becoming a
     // link that goes nowhere — reports written before the verify stage existed
     // can still contain fabricated ones.
@@ -48,6 +46,9 @@ function renderCitations(
         key={`${keyPrefix}-${m.index}`}
         onClick={() => onCite(ids)}
         title={`Jump to ${ids.length > 1 ? 'these sources' : 'this source'}`}
+        // The raw marker travels with the chip so a text selection over it can
+        // still be mapped back to an offset in the source prose.
+        {...{ [CITE_ATTR]: m[0] }}
         className="mx-0.5 rounded-chip bg-primary-tint px-1.5 align-super text-[10px] font-semibold leading-tight text-primary-deep transition-colors hover:bg-primary-soft/50"
       >
         {ids.map((id) => evIndex.get(id)).join(',')}
@@ -60,66 +61,131 @@ function renderCitations(
   return out
 }
 
-/** Read-only prose with its citation markers turned into source chips. */
+interface Span {
+  start: number
+  end: number
+  color: HighlightColor
+  comment?: string
+  id?: string
+}
+
+/**
+ * Locate each highlight inside `value`.
+ *
+ * Offsets recorded at selection time are authoritative and are checked against
+ * the text they were taken from, so an edit to the paragraph can't shift a mark
+ * onto the wrong words. Anything without usable offsets falls back to a search
+ * over the citation-free, whitespace-collapsed prose — which is what a
+ * highlight saved before offsets existed has to be matched against.
+ */
+function locate(value: string, highlights: InlineHighlight[]): Span[] {
+  const spans: Span[] = []
+  let flat: { plain: string; map: number[] } | null = null
+
+  for (const h of highlights) {
+    const needle = (h.text || '').trim()
+    if (typeof h.start === 'number' && typeof h.end === 'number') {
+      if (h.start >= 0 && h.end <= value.length && h.end > h.start) {
+        if (value.slice(h.start, h.end).trim() === needle) {
+          spans.push({ start: h.start, end: h.end, color: h.color, comment: h.comment, id: h.id })
+          continue
+        }
+      }
+    }
+    const flatNeedle = stripCitations(needle)
+    if (flatNeedle.length < 2) continue
+    if (!flat) flat = flatten(value)
+    // The same phrase can occur more than once; mark every instance.
+    let from = 0
+    for (;;) {
+      const idx = flat.plain.indexOf(flatNeedle, from)
+      if (idx === -1) break
+      const start = flat.map[idx]
+      const end = flat.map[idx + flatNeedle.length - 1] + 1
+      if (start !== undefined && end !== undefined) {
+        spans.push({ start, end, color: h.color, comment: h.comment, id: h.id })
+      }
+      from = idx + flatNeedle.length
+    }
+  }
+
+  if (spans.length === 0) return spans
+  // Longest-first at a shared start, then drop overlaps — a mark cannot begin
+  // inside the one before it without producing nested <mark> elements.
+  spans.sort((a, b) => a.start - b.start || b.end - a.end)
+  const merged: Span[] = []
+  let cursor = 0
+  for (const s of spans) {
+    if (s.start < cursor) continue
+    merged.push(s)
+    cursor = s.end
+  }
+  return merged
+}
+
+/**
+ * Render one string of report prose: reader highlights become `<mark>`, and
+ * citation markers become source chips — including inside a highlight, so a
+ * marked sentence keeps its working citations.
+ */
+function renderProse(
+  value: string,
+  highlights: InlineHighlight[] | undefined,
+  evIndex: Map<string, number> | undefined,
+  onCite: ((ids: string[]) => void) | undefined,
+  keyPrefix: string,
+): React.ReactNode {
+  const spans = highlights && highlights.length > 0 ? locate(value, highlights) : []
+  const cited = (slice: string, key: string): React.ReactNode =>
+    evIndex && onCite ? renderCitations(slice, evIndex, onCite, key) : slice
+  if (spans.length === 0) return cited(value, `${keyPrefix}-0`)
+
+  const out: React.ReactNode[] = []
+  let pos = 0
+  spans.forEach((s, i) => {
+    if (s.start > pos) {
+      out.push(
+        <Fragment key={`t${i}`}>{cited(value.slice(pos, s.start), `${keyPrefix}-t${i}`)}</Fragment>,
+      )
+    }
+    out.push(
+      <mark
+        key={`m${i}`}
+        data-highlight-id={s.id}
+        className={`${MARK_CLS[s.color]} rounded-[2px] px-0.5 text-ink`}
+        title={s.comment || undefined}
+      >
+        {cited(value.slice(s.start, s.end), `${keyPrefix}-m${i}`)}
+      </mark>,
+    )
+    pos = s.end
+  })
+  if (pos < value.length) {
+    out.push(<Fragment key="tail">{cited(value.slice(pos), `${keyPrefix}-tail`)}</Fragment>)
+  }
+  return out
+}
+
+/**
+ * Read-only prose with its citation markers turned into source chips, and its
+ * reader highlights marked. `blockId` makes the passage annotatable.
+ */
 export function VCitedText({
   text,
   evIndex,
   onCite,
+  blockId,
+  highlights,
 }: {
   text: string
-  evIndex: Map<string, number>
-  onCite: (ids: string[]) => void
+  evIndex?: Map<string, number>
+  onCite?: (ids: string[]) => void
+  blockId?: string
+  highlights?: InlineHighlight[]
 }) {
-  return <>{renderCitations(text, evIndex, onCite, 'ct')}</>
-}
-
-/** Slice the paragraph against saved highlights and wrap the matches in <mark>. */
-function renderWithHighlights(value: string, highlights: InlineHighlight[]) {
-  const hits: {
-    start: number
-    end: number
-    color: HighlightColor
-    comment?: string
-  }[] = []
-  for (const h of highlights) {
-    const needle = (h.text || '').trim()
-    if (needle.length < 2) continue
-    let from = 0
-    // The same highlighted phrase can occur more than once; mark every instance.
-    while (from <= value.length) {
-      const idx = value.indexOf(needle, from)
-      if (idx === -1) break
-      hits.push({ start: idx, end: idx + needle.length, color: h.color, comment: h.comment })
-      from = idx + needle.length
-    }
-  }
-  if (hits.length === 0) return value
-  // Sort by position and drop overlaps, keeping the first.
-  hits.sort((a, b) => a.start - b.start || b.end - a.end)
-  const merged: typeof hits = []
-  let cursor = 0
-  for (const h of hits) {
-    if (h.start < cursor) continue
-    merged.push(h)
-    cursor = h.end
-  }
-  const out: React.ReactNode[] = []
-  let pos = 0
-  merged.forEach((h, i) => {
-    if (h.start > pos) out.push(value.slice(pos, h.start))
-    out.push(
-      <mark
-        key={i}
-        className={`${MARK_CLS[h.color]} rounded-[2px] px-0.5 text-ink`}
-        title={h.comment || undefined}
-      >
-        {value.slice(h.start, h.end)}
-      </mark>,
-    )
-    pos = h.end
-  })
-  if (pos < value.length) out.push(value.slice(pos))
-  return out
+  const content = renderProse(text, highlights, evIndex, onCite, 'ct')
+  if (!blockId) return <>{content}</>
+  return <span {...{ [BLOCK_ATTR]: blockId }}>{content}</span>
 }
 
 /** Editable paragraph: double-click to edit, Cmd/Ctrl+Enter to save. */
@@ -129,6 +195,7 @@ export function VEditableBlock({
   onSave,
   className = '',
   as = 'p',
+  blockId,
   highlights,
   evIndex,
   onCite,
@@ -138,6 +205,8 @@ export function VEditableBlock({
   onSave: (text: string) => void
   className?: string
   as?: 'p' | 'div'
+  /** Identifies this string of prose so highlights can anchor to it. */
+  blockId?: string
   highlights?: InlineHighlight[]
   /** evidence_id → its number in the report's source list. Enables citation chips. */
   evIndex?: Map<string, number>
@@ -201,28 +270,16 @@ export function VEditableBlock({
   }
 
   const Tag = as
-  // Highlights first, then citations over whatever plain text is left, so a
-  // reader's highlight and a source chip can coexist in the same sentence.
-  let content: React.ReactNode =
-    highlights && highlights.length > 0 ? renderWithHighlights(value, highlights) : value
-  if (evIndex && onCite) {
-    const cite = (node: React.ReactNode, key: string) =>
-      typeof node === 'string' ? renderCitations(node, evIndex, onCite, key) : node
-    content = Array.isArray(content) ? (
-      content.map((n, i) => <Fragment key={i}>{cite(n, `c${i}`)}</Fragment>)
-    ) : (
-      cite(content, 'c0')
-    )
-  }
   return (
     <Tag
+      {...(blockId ? { [BLOCK_ATTR]: blockId } : {})}
       className={`${className} ${
         editable ? 'cursor-text rounded transition-colors hover:bg-primary-tint/30' : ''
       }`}
       onDoubleClick={() => editable && setEditing(true)}
       title={editable ? 'Double-click to edit' : undefined}
     >
-      {content}
+      {renderProse(value, highlights, evIndex, onCite, blockId ?? 'b')}
     </Tag>
   )
 }

@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Highlighter, BookmarkPlus, MessageSquarePlus } from 'lucide-react'
 import type { HighlightColor } from '../store/annotationStore'
+import { resolveSelection, stripCitations } from '../lib/selection'
+import type { SelectionHit } from '../lib/selection'
 
 interface Sel {
+  /** One per annotatable block the selection covers. Empty when it covers none. */
+  hits: SelectionHit[]
+  /** Plain reading text of the whole selection, for notes and the knowledge base. */
   text: string
   sectionId: string
   x: number
@@ -26,40 +31,72 @@ export function VSelectionToolbar({
 }: {
   containerRef: React.RefObject<HTMLElement | null>
   enabled: boolean
-  onHighlight: (sectionId: string, text: string, color: HighlightColor) => void
-  onComment: (sectionId: string, text: string) => void
+  /** Receives one anchor per block covered; empty when the passage can't be marked inline. */
+  onHighlight: (hits: SelectionHit[], text: string, sectionId: string, color: HighlightColor) => void
+  onComment: (hits: SelectionHit[], text: string, sectionId: string) => void
   onSaveKB: (sectionId: string, text: string) => void
 }) {
   const [sel, setSel] = useState<Sel | null>(null)
 
   useEffect(() => {
     if (!enabled) return
-    function onUp() {
-      const s = window.getSelection()
-      if (!s || s.isCollapsed || !s.toString().trim()) {
-        setSel(null)
-        return
-      }
-      const text = s.toString().trim()
-      if (text.length < 2) return
-      const range = s.getRangeAt(0)
-      const node = range.startContainer.parentElement?.closest('[data-section-id]')
+
+    function read() {
       const container = containerRef.current
-      if (!node || !container || !container.contains(node)) {
+      const s = window.getSelection()
+      if (!container || !s || s.rangeCount === 0 || s.isCollapsed) {
         setSel(null)
         return
       }
+      const range = s.getRangeAt(0)
+      // Both endpoints must sit inside the article; a selection that started in
+      // the sidebar and dragged in is not an annotation.
+      if (
+        !container.contains(range.commonAncestorContainer) &&
+        range.commonAncestorContainer !== container
+      ) {
+        setSel(null)
+        return
+      }
+      const text = stripCitations(s.toString())
+      if (text.length < 2) {
+        setSel(null)
+        return
+      }
+      const hits = resolveSelection(container, range)
+      const sectionId =
+        hits[0]?.sectionId ||
+        (range.startContainer.nodeType === Node.ELEMENT_NODE
+          ? (range.startContainer as HTMLElement)
+          : range.startContainer.parentElement
+        )
+          ?.closest('[data-section-id]')
+          ?.getAttribute('data-section-id') ||
+        ''
       const rect = range.getBoundingClientRect()
+      if (rect.width === 0 && rect.height === 0) {
+        setSel(null)
+        return
+      }
       const cRect = container.getBoundingClientRect()
       setSel({
+        hits,
         text,
-        sectionId: node.getAttribute('data-section-id') || '',
+        sectionId,
         x: rect.left + rect.width / 2 - cRect.left,
         y: rect.top - cRect.top - 8,
       })
     }
-    document.addEventListener('mouseup', onUp)
-    return () => document.removeEventListener('mouseup', onUp)
+
+    // `mouseup` covers dragging; `keyup` covers shift+arrow and Ctrl+A. Both are
+    // read on the next frame so the browser has settled the final range.
+    const schedule = () => window.requestAnimationFrame(read)
+    document.addEventListener('mouseup', schedule)
+    document.addEventListener('keyup', schedule)
+    return () => {
+      document.removeEventListener('mouseup', schedule)
+      document.removeEventListener('keyup', schedule)
+    }
   }, [enabled, containerRef])
 
   if (!enabled || !sel) return null
@@ -83,7 +120,7 @@ export function VSelectionToolbar({
             title={`Highlight · ${c.label}`}
             aria-label={`Highlight as ${c.label}`}
             onClick={() => {
-              onHighlight(sel.sectionId, sel.text, c.key)
+              onHighlight(sel.hits, sel.text, sel.sectionId, c.key)
               clear()
             }}
             className={`h-5 w-5 rounded-full ${c.cls} ring-1 ring-black/5 transition-transform hover:scale-110`}
@@ -94,7 +131,7 @@ export function VSelectionToolbar({
           title="Add a note"
           aria-label="Add a note"
           onClick={() => {
-            onComment(sel.sectionId, sel.text)
+            onComment(sel.hits, sel.text, sel.sectionId)
             clear()
           }}
           className="grid h-6 w-6 place-items-center rounded-btn text-ink-2 hover:bg-primary-tint hover:text-primary-deep"

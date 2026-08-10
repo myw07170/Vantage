@@ -5,6 +5,8 @@ import { useExpertStore } from '../store/expertStore'
 import { CONFIDENCE_LABEL } from '../lib/labels'
 import { plural } from '../lib/format'
 import { VAvatar } from './VAvatar'
+import { VCitedText } from './VEditableBlock'
+import type { InlineHighlight } from './VEditableBlock'
 
 const CONF_META = {
   high: { cls: 'bg-ok/15 text-ok-deep', icon: ShieldCheck },
@@ -17,9 +19,14 @@ const CONF_META = {
 export function VClaimCard({
   claim,
   onCite,
+  blockId,
+  highlights,
 }: {
   claim: Claim
   onCite?: (evidenceIds: string[]) => void
+  /** Makes the claim text annotatable alongside the body prose. */
+  blockId?: string
+  highlights?: InlineHighlight[]
 }) {
   const byId = useExpertStore((s) => s.byId)
   const meta = CONF_META[claim.confidence] ?? CONF_META.unverified
@@ -31,7 +38,9 @@ export function VClaimCard({
       animate={{ opacity: 1, y: 0 }}
       className="rounded-card border border-line/60 bg-card p-4 shadow-card"
     >
-      <p className="text-body text-ink">{claim.text}</p>
+      <p className="text-body text-ink">
+        <VCitedText text={claim.text} blockId={blockId} highlights={highlights} />
+      </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span
           className={`inline-flex items-center gap-1 rounded-chip px-2.5 h-6 text-tag font-medium ${meta.cls}`}
