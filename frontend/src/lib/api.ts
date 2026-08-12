@@ -139,6 +139,22 @@ export async function fetchReports(): Promise<ReportCard[]> {
   return safeJson<ReportCard[]>('/api/reports', undefined, [])
 }
 
+/** Renames or stars a report. Send one field; omitted fields are left alone. */
+export async function updateReport(
+  reportId: string,
+  patch: { title?: string; starred?: boolean },
+): Promise<{ ok: boolean; message?: string }> {
+  return safeJson(
+    `/api/reports/${reportId}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    },
+    { ok: false, message: 'Request failed' },
+  )
+}
+
 /** Deletes the report and everything derived from it: evidence, traces, feedback. */
 export async function deleteReport(
   reportId: string,

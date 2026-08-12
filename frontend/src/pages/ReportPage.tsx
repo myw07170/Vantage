@@ -41,9 +41,10 @@ import { VVerifyReport } from '../components/VVerifyReport'
 import { VReportToc } from '../components/VReportToc'
 import { VDataGrid } from '../components/VDataGrid'
 import VSidebar from '../layout/VSidebar'
+import VShellFallback from '../layout/VShellFallback'
 import { VFeatureMatrix, VPricingTable, VPersonaCards } from '../components/VStructured'
 import { refineSection, submitFeedback } from '../lib/api'
-import { VSkeleton, VCountUp } from '../components/ui'
+import { VCountUp } from '../components/ui'
 import { formatDate, plural, truncate } from '../lib/format'
 
 const HL_DOT: Record<HighlightColor, string> = {
@@ -283,25 +284,24 @@ export default function ReportPage() {
     flash(ok ? 'Claim saved to your knowledge base' : 'Already saved')
   }
 
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-read px-6 py-16">
-        <VSkeleton className="h-48 w-full rounded-card" />
-        <VSkeleton className="mt-4 h-6 w-2/3" />
-        <VSkeleton className="mt-2 h-6 w-1/2" />
-      </div>
-    )
-  }
+  // The same shell the route's Suspense boundary shows, so the chunk wait and
+  // the fetch wait are one continuous frame with the rail already in place.
+  if (loading) return <VShellFallback />
   if (error || !current) {
+    // Inside the shell as well: a missing report is a dead end in the workspace,
+    // not a dead end out of it — the rail stays there to leave by.
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-bg text-ink-2">
-        <p>{error ?? 'Report not found.'}</p>
-        <button
-          onClick={() => navigate('/')}
-          className="h-10 rounded-btn bg-primary-deep px-5 text-aux font-medium text-white"
-        >
-          Back to start
-        </button>
+      <div className="flex h-screen w-screen overflow-hidden bg-bg">
+        <VSidebar />
+        <main className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 text-ink-2">
+          <p>{error ?? 'Report not found.'}</p>
+          <button
+            onClick={() => navigate('/')}
+            className="h-10 rounded-btn bg-primary-deep px-5 text-aux font-medium text-white"
+          >
+            Back to start
+          </button>
+        </main>
       </div>
     )
   }
@@ -433,6 +433,10 @@ export default function ReportPage() {
           </div>
         </div>
 
+        {/* The report's white space lives in three places: `max-w-article`
+            (the reading column, defined once in tailwind.config.js and shared
+            with the metrics band above), `px-6` (the gutter beside the text)
+            and `py-10` (the space above the first section and below the last). */}
         <article ref={articleRef} className="relative mx-auto max-w-article px-6 py-10">
           <VSelectionToolbar
             containerRef={articleRef}
@@ -707,8 +711,10 @@ export default function ReportPage() {
         </article>
       </main>
 
-      {/* Sources and notes */}
-      <aside className="hidden w-80 shrink-0 flex-col border-l border-line bg-card/50 xl:flex">
+      {/* Sources and notes. `w-[380px]` is the panel's width; `xl:flex` is the
+          breakpoint below which it is dropped entirely rather than squeezing the
+          article — raise the width and you may want `2xl:flex` with it. */}
+      <aside className="hidden w-[380px] shrink-0 flex-col border-l border-line bg-card/50 xl:flex">
         <div className="flex h-14 items-center gap-2 border-b border-line px-5">
           <BookOpen size={16} className="text-primary" />
           <span className="text-aux font-semibold text-ink">Sources &amp; notes</span>

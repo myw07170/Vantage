@@ -70,6 +70,10 @@ const EXAMPLES: {
   },
 ]
 
+// The avatar wall and its "Meet all N analysts" link at the foot of the page.
+// Off for now — flip to `true` to bring the row back; nothing else changes.
+const SHOW_ANALYST_WALL = false
+
 export default function HomePage() {
   const navigate = useNavigate()
   const [text, setText] = useState('')
@@ -81,6 +85,19 @@ export default function HomePage() {
   // Read from the roster, not written in: the copy stays true as the team grows,
   // and reads without a number for the frame before the roster loads.
   const teamSize = experts.length
+
+  /** An example is a starting point, not a command: it loads the question into
+   *  the box and hands over the caret. Nothing is sent until the reader sends
+   *  it — most of these want a name or a market swapped out first. */
+  function fillExample(q: string) {
+    setText(q)
+    const ta = taRef.current
+    if (!ta) return
+    ta.focus() // also scrolls the box back into view from the cards below
+    // Next frame, so the caret lands after the text React is about to write in
+    // rather than at the end of whatever the box held before.
+    requestAnimationFrame(() => ta.setSelectionRange(q.length, q.length))
+  }
 
   async function submit(q: string) {
     const query = q.trim()
@@ -127,9 +144,11 @@ export default function HomePage() {
           animate="animate"
           className="mt-3 text-center text-lg text-ink-2"
         >
-          {teamSize > 0 ? `A team of ${teamSize} analysts` : 'A team of analysts'}{' '}
+          {/* {teamSize > 0 ? `A team of ${teamSize} analysts` : 'A team of analysts'}{' '}
           researches the market, cross-checks every source, and writes a report you
-          can audit line by line.
+          can audit line by line. */}
+          {/* Analysts research the market, verify every source, and write an auditable report. */}
+          live web research · cross-validated · no claim without evidence
         </motion.p>
 
         <motion.div
@@ -140,7 +159,7 @@ export default function HomePage() {
         >
           <textarea
             ref={taRef}
-            rows={3}
+            rows={5}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
@@ -149,43 +168,43 @@ export default function HomePage() {
             placeholder="Which market, company or competitive question? For example: compare Notion, Obsidian and Craft on features and pricing"
             className="w-full resize-none bg-transparent text-[15px] text-ink outline-none placeholder:text-ink-3"
           />
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="text-tag text-ink-3">Depth</span>
-            {MODE_OPTIONS.map((m) => {
-              const Icon = m.icon
-              const active = mode === m.key
-              return (
-                <button
-                  key={m.key}
-                  type="button"
-                  onClick={() => setMode(m.key)}
-                  title={m.desc}
-                  className={`inline-flex h-8 items-center gap-1.5 rounded-chip px-3 text-aux font-medium transition-colors ${
-                    active
-                      ? 'bg-primary-deep text-white'
-                      : 'bg-primary-tint/60 text-ink-2 hover:bg-primary-tint'
-                  }`}
-                >
-                  <Icon size={14} /> {m.label}
-                </button>
-              )
-            })}
-            <span className="text-tag text-ink-3">
-              {MODE_OPTIONS.find((m) => m.key === mode)?.desc}
-            </span>
-          </div>
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate text-tag text-ink-3">
-              Live web research · cross-validated · no claim without evidence
-            </span>
-            <button
-              onClick={() => submit(text)}
-              disabled={!text.trim() || submitting}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-primary-deep text-white shadow-card transition-all hover:scale-105 hover:bg-primary-deeper active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
-              aria-label="Start research"
-            >
-              <ArrowUp size={20} />
-            </button>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {/* left：Depth choose */}
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <span className="text-tag text-ink-3">Depth</span>
+              {MODE_OPTIONS.map((m) => {
+                const Icon = m.icon
+                const active = mode === m.key
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => setMode(m.key)}
+                    title={m.desc}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-chip px-3 text-aux font-medium transition-colors ${
+                      active
+                        ? 'bg-primary-deep text-white'
+                        : 'bg-primary-tint/60 text-ink-2 hover:bg-primary-tint'
+                    }`}
+                  >
+                    <Icon size={14} /> {m.label}
+                  </button>
+                )
+              })}
+              <span className="text-tag text-ink-3">
+                {MODE_OPTIONS.find((m) => m.key === mode)?.desc}
+              </span>
+            </div>
+
+            {/* right：sent */}
+              <button
+                onClick={() => submit(text)}
+                disabled={!text.trim() || submitting}
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-primary-deep text-white shadow-card transition-all hover:scale-105 hover:bg-primary-deeper active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
+                aria-label="Start research"
+              >
+                <ArrowUp size={20} />
+              </button>
           </div>
         </motion.div>
 
@@ -200,7 +219,8 @@ export default function HomePage() {
             <motion.button
               key={ex.title}
               variants={fadeUp}
-              onClick={() => submit(ex.q)}
+              onClick={() => fillExample(ex.q)}
+              title="Put this question in the box above"
               className="group flex flex-col rounded-card border border-line/60 bg-card/80 p-4 text-left shadow-card backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-float"
             >
               <span
@@ -216,28 +236,34 @@ export default function HomePage() {
           ))}
         </motion.div>
 
-        <div className="mt-12 flex w-full flex-col items-center">
-          <div className="flex flex-wrap items-center justify-center">
-            <div className="flex items-center -space-x-2">
-              {wall.map((e, i) => (
-                <span key={e.id} className="relative" style={{ zIndex: wall.length - i }}>
-                  <VAvatar
-                    expert={e}
-                    size={36}
-                    title={`${e.name} · ${e.role_title}`}
-                    className="border-2 border-card shadow-card"
-                  />
-                </span>
-              ))}
+        {SHOW_ANALYST_WALL && (
+          <div className="mt-12 flex w-full flex-col items-center">
+            <div className="flex flex-wrap items-center justify-center">
+              <div className="flex items-center -space-x-2">
+                {wall.map((e, i) => (
+                  <span
+                    key={e.id}
+                    className="relative"
+                    style={{ zIndex: wall.length - i }}
+                  >
+                    <VAvatar
+                      expert={e}
+                      size={36}
+                      title={`${e.name} · ${e.role_title}`}
+                      className="border-2 border-card shadow-card"
+                    />
+                  </span>
+                ))}
+              </div>
+              <button
+                onClick={() => navigate('/experts')}
+                className="z-0 ml-2 inline-flex h-9 items-center rounded-chip bg-primary-tint px-3 text-tag font-medium text-primary-deep hover:bg-primary-soft/40"
+              >
+                {teamSize > 0 ? `Meet all ${teamSize} analysts →` : 'Meet the analysts →'}
+              </button>
             </div>
-            <button
-              onClick={() => navigate('/experts')}
-              className="z-0 ml-2 inline-flex h-9 items-center rounded-chip bg-primary-tint px-3 text-tag font-medium text-primary-deep hover:bg-primary-soft/40"
-            >
-              {teamSize > 0 ? `Meet all ${teamSize} analysts →` : 'Meet the analysts →'}
-            </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )

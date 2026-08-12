@@ -17,6 +17,7 @@ interface ReportState {
   cardsLoading: boolean
   loadCards: () => Promise<void>
   removeCard: (id: string) => void
+  patchCard: (id: string, patch: Partial<Pick<ReportCard, 'title' | 'starred'>>) => void
 }
 
 /** The sidebar and the library both mount at once and both want the list; this
@@ -66,6 +67,27 @@ export const useReportStore = create<ReportState>((set, get) => ({
       })
     return cardsInFlight
   },
+  // Applied locally after the server has accepted the change, so the sidebar,
+  // the library and an already-open report all move together. The cached detail
+  // and `current` carry the title too — patching only the card would leave the
+  // report page showing the old heading until the cache was dropped.
+  patchCard: (id, patch) =>
+    set((s) => {
+      const cached = s.cache[id]
+      const renamed = patch.title !== undefined
+      return {
+        cards: s.cards.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        cache:
+          renamed && cached
+            ? { ...s.cache, [id]: { ...cached, title: patch.title as string } }
+            : s.cache,
+        current:
+          renamed && s.current?.id === id
+            ? { ...s.current, title: patch.title as string }
+            : s.current,
+      }
+    }),
+
   removeCard: (id) =>
     set((s) => ({
       cards: s.cards.filter((c) => c.id !== id),

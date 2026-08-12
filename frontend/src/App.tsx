@@ -1,9 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Suspense, lazy, useEffect } from 'react'
-import AppLayout from './layout/AppLayout'
+import AppLayout, { RouteFallback } from './layout/AppLayout'
+import VShellFallback from './layout/VShellFallback'
 import HomePage from './pages/HomePage'
 import { useExpertStore } from './store/expertStore'
-import { VSkeleton } from './components/ui'
 
 // Home is eager — it is the entry point and must paint immediately. Everything
 // else loads on navigation, which keeps ECharts (~1MB) and D3 (~250kB) out of
@@ -18,22 +18,6 @@ const ExpertDetailPage = lazy(() => import('./pages/ExpertDetailPage'))
 const LibraryPage = lazy(() => import('./pages/LibraryPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const KnowledgePage = lazy(() => import('./pages/KnowledgePage'))
-
-/** Placeholder while a route chunk arrives. Mirrors the page rhythm — header
- *  band then content — so the layout does not jump when the real page lands. */
-function RouteFallback() {
-  return (
-    <div className="mx-auto max-w-content px-8 py-8">
-      <VSkeleton className="h-8 w-56" />
-      <VSkeleton className="mt-3 h-4 w-96" />
-      <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }, (_, i) => (
-          <VSkeleton key={i} className="h-36 w-full rounded-card" />
-        ))}
-      </div>
-    </div>
-  )
-}
 
 export default function App() {
   const load = useExpertStore((s) => s.load)
@@ -58,7 +42,17 @@ export default function App() {
           {/* Full-screen pages: clarify, live run, report, graph, trace */}
           <Route path="/clarify/:taskId" element={<ClarifyPage />} />
           <Route path="/workspace/:taskId" element={<WorkspacePage />} />
-          <Route path="/report/:reportId" element={<ReportPage />} />
+          {/* The report carries the sidebar itself, so its chunk waits behind
+              the shell fallback — the nearest boundary wins, and the rail stays
+              painted instead of the window going blank. */}
+          <Route
+            path="/report/:reportId"
+            element={
+              <Suspense fallback={<VShellFallback />}>
+                <ReportPage />
+              </Suspense>
+            }
+          />
           <Route path="/graph/:reportId" element={<GraphPage />} />
           <Route path="/trace/:reportId" element={<TracePage />} />
 

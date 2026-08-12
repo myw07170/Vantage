@@ -220,6 +220,22 @@ def get_report(report_id: str):
     return rep
 
 
+class ReportPatch(BaseModel):
+    """Both fields optional: the sidebar sends one or the other, never both."""
+
+    title: Optional[str] = None
+    starred: Optional[bool] = None
+
+
+@app.patch("/api/reports/{report_id}")
+def patch_report(report_id: str, body: ReportPatch):
+    """Renames or stars a report. Presentation only — the analysis is untouched."""
+    card = db.update_report(report_id, title=body.title, starred=body.starred)
+    if card is None:
+        return {"ok": False, "message": "report not found"}
+    return {"ok": True, "report": card}
+
+
 @app.delete("/api/reports/{report_id}")
 def delete_report(report_id: str):
     """Deletes the report along with its evidence, traces and feedback."""

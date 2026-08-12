@@ -101,7 +101,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             evidence_count INTEGER,
             claim_count INTEGER,
             high_conf_count INTEGER,
-            created_at TEXT
+            created_at TEXT,
+            starred INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS evidences (
             evidence_id TEXT PRIMARY KEY,
@@ -170,6 +171,25 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         """
     )
     conn.commit()
+    _add_missing_columns(conn)
+
+
+# Columns added after the first release. `CREATE TABLE IF NOT EXISTS` is a no-op
+# on a database that already has the table, so a new column has to be ALTERed in
+# or every existing vantage.db would break on the first query that names it.
+# Additive only: give each one a default, never drop or retype.
+_LATE_COLUMNS: Dict[str, Dict[str, str]] = {
+    "reports": {"starred": "INTEGER NOT NULL DEFAULT 0"},
+}
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    for table, columns in _LATE_COLUMNS.items():
+        present = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, decl in columns.items():
+            if name not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+    conn.commit()
 
 
 # ── tasks ─────────────────────────────────────────────────────────────────────
@@ -221,10 +241,14 @@ def save_report(report: Dict[str, Any], task_id: str = "") -> None:
     high = sum(1 for c in claims if c.get("confidence") == "high")
     with _LOCK:
         c = _connect()
+        # `starred` is carried over from any existing row: this is REPLACE, not
+        # UPDATE, and a refine or a feedback post re-saves the whole report —
+        # without the sub-select those paths would silently unstar it.
         c.execute(
             "INSERT OR REPLACE INTO reports(report_id,task_id,title,subtitle,query,brands,experts,"
-            "cover_image,data,evidence_count,claim_count,high_conf_count,created_at)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "cover_image,data,evidence_count,claim_count,high_conf_count,created_at,starred)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,"
+            "COALESCE((SELECT starred FROM reports WHERE report_id=?),0))",
             (
                 report["id"],
                 task_id,
@@ -239,6 +263,7 @@ def save_report(report: Dict[str, Any], task_id: str = "") -> None:
                 len(claims),
                 high,
                 report.get("created_at", _now()),
+                report["id"],
             ),
         )
         # Evidence is also stored row-wise so the global evidence library can
@@ -280,7 +305,7 @@ def list_reports() -> List[Dict[str, Any]]:
     c = _connect()
     rows = c.execute(
         "SELECT report_id,title,subtitle,query,brands,experts,cover_image,"
-        "evidence_count,claim_count,high_conf_count,created_at FROM reports "
+        "evidence_count,claim_count,high_conf_count,created_at,starred FROM reports "
         "ORDER BY created_at DESC"
     ).fetchall()
     out = []
@@ -289,8 +314,64 @@ def list_reports() -> List[Dict[str, Any]]:
         d["id"] = d["report_id"]
         d["brands"] = json.loads(d.get("brands") or "[]")
         d["experts"] = json.loads(d.get("experts") or "[]")
+        # Stored as 0/1 because SQLite has no boolean; handed to the client as
+        # one so the UI never has to know that.
+        d["starred"] = bool(d.get("starred"))
         out.append(d)
     return out
+
+
+def update_report(
+    report_id: str,
+    title: Optional[str] = None,
+    starred: Optional[bool] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Rename and/or star a report. Returns the updated card, or None if unknown.
+
+    A rename has to land in two places: the `title` column the report list reads,
+    and the `title` key inside the `data` blob the report page renders from.
+    Writing only the column renames the entry in the sidebar and leaves the open
+    report still showing the old heading.
+
+    Only the user-facing label changes — the analysis, its claims and its
+    evidence are untouched, so a renamed report is still the report that was
+    produced and audited.
+    """
+    with _LOCK:
+        c = _connect()
+        row = c.execute(
+            "SELECT data FROM reports WHERE report_id=?", (report_id,)
+        ).fetchone()
+        if not row:
+            return None
+        if title is not None:
+            clean = title.strip()[:200]
+            if clean:
+                try:
+                    data = json.loads(row["data"])
+                    data["title"] = clean
+                    blob = json.dumps(data)
+                except (ValueError, TypeError):
+                    blob = row["data"]  # unreadable blob: still rename the card
+                c.execute(
+                    "UPDATE reports SET title=?, data=? WHERE report_id=?",
+                    (clean, blob, report_id),
+                )
+        if starred is not None:
+            c.execute(
+                "UPDATE reports SET starred=? WHERE report_id=?",
+                (1 if starred else 0, report_id),
+            )
+        c.commit()
+    card = c.execute(
+        "SELECT report_id,title,subtitle,starred FROM reports WHERE report_id=?",
+        (report_id,),
+    ).fetchone()
+    d = dict(card)
+    d["id"] = d["report_id"]
+    d["starred"] = bool(d["starred"])
+    return d
 
 
 def delete_report(report_id: str) -> bool:

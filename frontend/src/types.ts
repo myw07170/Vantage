@@ -336,6 +336,8 @@ export interface ReportCard {
   claim_count: number
   high_conf_count: number
   created_at: string
+  /** Pinned by the reader. Presentation only — it changes ordering, not content. */
+  starred?: boolean
 }
 
 /* ── Dashboard ───────────────────────────────────────────────────────────── */
