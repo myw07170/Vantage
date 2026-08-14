@@ -158,3 +158,29 @@ export function accentFor(key: string): Accent {
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0
   return ACCENT_ORDER[Math.abs(h) % ACCENT_ORDER.length]
 }
+
+/**
+ * Distinct accents for a group of labels shown side by side.
+ *
+ * `accentFor` on its own is right for one label at a time, but a set drawn from
+ * it lands members on the same hue often enough to matter — six hues and four
+ * labels collide about half the time. Two identical chips next to each other
+ * read as "these two go together", which is the opposite of what a categorical
+ * colour is for.
+ *
+ * Each key keeps its hashed hue where it can and takes the next free one on the
+ * arc where it cannot. The common case stays stable across pages, and a
+ * collision costs one label its usual colour instead of costing the whole set
+ * its meaning. Past six labels the hues necessarily repeat.
+ */
+export function accentSet(keys: string[]): Accent[] {
+  const used = new Set<Accent>()
+  return keys.map((k) => {
+    let a = accentFor(k)
+    for (let i = 0; used.has(a) && i < ACCENT_ORDER.length; i++) {
+      a = ACCENT_ORDER[(ACCENT_ORDER.indexOf(a) + 1) % ACCENT_ORDER.length]
+    }
+    used.add(a)
+    return a
+  })
+}

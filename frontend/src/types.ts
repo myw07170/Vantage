@@ -336,6 +336,9 @@ export interface ReportCard {
   claim_count: number
   high_conf_count: number
   created_at: string
+  /** Research depth the report was run at — `quick` | `deep` | `expert`. Empty
+   *  on reports written before the column existed and whose blob had no mode. */
+  mode?: string
   /** Pinned by the reader. Presentation only — it changes ordering, not content. */
   starred?: boolean
 }

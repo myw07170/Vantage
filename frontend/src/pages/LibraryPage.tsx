@@ -1,13 +1,30 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { FileText, Plus, Clock, Network, ShieldCheck, Trash2 } from 'lucide-react'
+import { FileText, Plus, Clock, Network, Users, Gauge, Trash2 } from 'lucide-react'
 import { deleteReport } from '../lib/api'
 import type { ReportCard } from '../types'
 import { fadeUp, stagger } from '../lib/motion'
 import { VConfirm, VEmpty, VSkeleton } from '../components/ui'
 import { formatDate, num } from '../lib/format'
+import { MODE_LABEL } from '../lib/labels'
+import { ACCENT_CHIP, accentSet } from '../lib/accents'
 import { useReportStore } from '../store/reportStore'
+
+/** Products named on a card before the rest are counted off. Four fills two
+ *  rows at the narrowest column without pushing the meta line down. */
+const CARD_BRANDS = 4
+
+/** The shown brands paired with the hue each gets.
+ *
+ *  Hashed on a case-folded name so "TikTok" and "Tiktok" — the pipeline records
+ *  whichever spelling the sources used — are one product wearing one colour,
+ *  while the chip still reads with the spelling the report actually found. */
+function brandChips(brands: string[]) {
+  const shown = brands.slice(0, CARD_BRANDS)
+  const accents = accentSet(shown.map((b) => b.trim().toLowerCase()))
+  return shown.map((name, i) => ({ name, accent: accents[i] }))
+}
 
 export default function LibraryPage() {
   const navigate = useNavigate()
@@ -55,8 +72,10 @@ export default function LibraryPage() {
 
       {loading ? (
         <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Tracks the real card height — 168px of content plus the evidence
+              graph footer — so the grid does not jump when the cards land. */}
           {Array.from({ length: 3 }).map((_, i) => (
-            <VSkeleton key={i} className="h-56" />
+            <VSkeleton key={i} className="h-[200px]" />
           ))}
         </div>
       ) : reports.length === 0 ? (
@@ -87,12 +106,17 @@ export default function LibraryPage() {
               className="group relative flex flex-col overflow-hidden rounded-card border border-line/60 bg-card text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-float"
             >
               {/* Sibling of the card's own button, not a child — nesting one
-                  button inside another is invalid and swallows the click. */}
+                  button inside another is invalid and swallows the click.
+
+                  It used to sit on the cover image, where white-on-dark was
+                  legible; on the card surface it needs the opposite treatment —
+                  quiet until the card is hovered or the button itself is
+                  focused, so a grid of cards is not a grid of delete buttons. */}
               <button
                 onClick={() => setPendingDelete(r)}
                 aria-label={`Delete report: ${r.title}`}
                 title="Delete report"
-                className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-btn bg-ink/35 text-white backdrop-blur-sm transition-colors hover:bg-risk-deep focus-visible:bg-risk-deep"
+                className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-btn text-ink-3 opacity-0 transition-all hover:bg-risk-tint hover:text-risk-deep focus-visible:opacity-100 group-hover:opacity-100"
               >
                 <Trash2 size={14} />
               </button>
@@ -100,31 +124,64 @@ export default function LibraryPage() {
                 onClick={() => navigate(`/report/${r.id}`)}
                 className="flex flex-1 flex-col text-left"
               >
-                <div className="relative h-32 overflow-hidden bg-primary-tint">
-                  {r.cover_image && (
-                    <img
-                      src={r.cover_image}
-                      alt=""
-                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                    />
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-ink/40 to-transparent" />
-                </div>
-                <div className="flex flex-1 flex-col p-4">
-                  <div className="line-clamp-2 text-aux font-semibold text-ink">
+                {/* `min-h` holds the card at the height it had when it carried a
+                    subtitle as well. Without it, dropping that line would shrink
+                    every card; with it, the spare space falls to the `mt-auto`
+                    meta row and the grid keeps its rhythm. */}
+                <div className="flex min-h-[168px] flex-1 flex-col p-5">
+                  {/* `pr-8` keeps the second line of a long title clear of the
+                      delete button, which is now over the text rather than over
+                      an image band. */}
+                  <div className="line-clamp-2 pr-8 text-aux font-semibold text-ink">
                     {r.title}
                   </div>
-                  <p className="mt-1 line-clamp-2 text-tag text-ink-3">{r.subtitle}</p>
-                  <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-3 text-tag text-ink-3">
-                    <span className="inline-flex items-center gap-1">
-                      <Clock size={12} /> {formatDate(r.created_at)}
+
+                  {/* The products the report compares. The hue is hashed from
+                      the name, so a product keeps one colour everywhere it
+                      appears — an identity rather than decoration. */}
+                  {r.brands.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {brandChips(r.brands).map(({ name, accent }) => (
+                        <span
+                          key={name}
+                          className={`inline-flex max-w-full items-center rounded-chip px-2 py-0.5 text-tag font-medium ${ACCENT_CHIP[accent]}`}
+                        >
+                          <span className="truncate">{name}</span>
+                        </span>
+                      ))}
+                      {r.brands.length > CARD_BRANDS && (
+                        <span
+                          title={r.brands.slice(CARD_BRANDS).join(', ')}
+                          className="inline-flex items-center rounded-chip bg-line/60 px-2 py-0.5 text-tag font-medium text-ink-3"
+                        >
+                          +{r.brands.length - CARD_BRANDS}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* One line: when, how much, who, how deep. Each item is
+                      `whitespace-nowrap` so it breaks between items rather than
+                      inside one, and the row may wrap at the narrowest column
+                      instead of overflowing the card. */}
+                  <div className="mt-auto flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-3 text-tag text-ink-3">
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                      <Clock size={11} /> {formatDate(r.created_at)}
                     </span>
-                    <span className="inline-flex items-center gap-1">
-                      <FileText size={12} /> {num(r.evidence_count)} sources
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                      <FileText size={11} /> {num(r.evidence_count)} sources
                     </span>
-                    <span className="inline-flex items-center gap-1 text-primary-deep">
-                      <ShieldCheck size={12} /> {num(r.high_conf_count)} high confidence
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                      <Users size={11} /> {num(r.experts.length)} analysts
                     </span>
+                    {r.mode && (
+                      <span
+                        title={`${MODE_LABEL[r.mode] ?? r.mode} research mode`}
+                        className="inline-flex items-center gap-1 whitespace-nowrap text-primary-deep"
+                      >
+                        <Gauge size={11} /> {MODE_LABEL[r.mode] ?? r.mode}
+                      </span>
+                    )}
                   </div>
                 </div>
               </button>

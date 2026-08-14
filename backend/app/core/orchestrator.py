@@ -2710,18 +2710,23 @@ def _build_data_grid(
     return {"columns": columns, "rows": rows}
 
 
-def _cover_image(brands: List[str], report_id: str) -> str:
+def _cover_image(report_id: str) -> str:
     """A self-contained SVG cover, derived from the report itself.
 
     Kept as an inline data URI so a report never depends on an external image
     host staying up — and so an offline deployment still renders.
+
+    Deliberately wordless. It used to letter the brand names and the words
+    COMPETITIVE INTELLIGENCE across the middle of the band, which collided with
+    the report title the page draws on top of it — two sizes of the same words
+    fighting each other. The image is a backdrop; the title is the frontend's
+    to set, and only one of the two should be saying it.
     """
     palette = [
         ("#7C9885", "#5E7A66"), ("#8FA8C0", "#5E7A9B"), ("#C2B59B", "#9B8C6E"),
         ("#CE9A92", "#A8746C"), ("#A8C0A8", "#7C9885"),
     ]
     start, end = palette[sum(ord(c) for c in report_id) % len(palette)]
-    label = " · ".join(brands[:3])[:48]
     svg = (
         "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 675'>"
         f"<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>"
@@ -2730,20 +2735,9 @@ def _cover_image(brands: List[str], report_id: str) -> str:
         "<rect width='1200' height='675' fill='url(#g)'/>"
         "<circle cx='980' cy='140' r='220' fill='#ffffff' opacity='0.07'/>"
         "<circle cx='220' cy='560' r='170' fill='#ffffff' opacity='0.05'/>"
-        "<text x='72' y='352' font-family='Georgia,serif' font-size='58' "
-        f"fill='#ffffff' opacity='0.96'>{_xml_escape(label)}</text>"
-        "<text x='74' y='404' font-family='Inter,sans-serif' font-size='23' "
-        "fill='#ffffff' opacity='0.72' letter-spacing='3'>COMPETITIVE INTELLIGENCE</text>"
         "</svg>"
     )
     return "data:image/svg+xml;utf8," + quote(svg)
-
-
-def _xml_escape(text: str) -> str:
-    return (
-        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        .replace('"', "&quot;").replace("'", "&apos;")
-    )
 
 
 # ── Report assembly ───────────────────────────────────────────────────────────
@@ -2964,7 +2958,7 @@ def _assemble_report(
         "created_at": _now(),
         "experts": members,
         "dispatch": dispatch["members"],
-        "cover_image": _cover_image(brands, rid),
+        "cover_image": _cover_image(rid),
         "toc": toc,
         "sections": sections,
         "charts": charts,

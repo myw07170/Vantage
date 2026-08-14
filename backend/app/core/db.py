@@ -102,7 +102,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             claim_count INTEGER,
             high_conf_count INTEGER,
             created_at TEXT,
-            starred INTEGER NOT NULL DEFAULT 0
+            starred INTEGER NOT NULL DEFAULT 0,
+            mode TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS evidences (
             evidence_id TEXT PRIMARY KEY,
@@ -179,17 +180,47 @@ def _init_schema(conn: sqlite3.Connection) -> None:
 # or every existing vantage.db would break on the first query that names it.
 # Additive only: give each one a default, never drop or retype.
 _LATE_COLUMNS: Dict[str, Dict[str, str]] = {
-    "reports": {"starred": "INTEGER NOT NULL DEFAULT 0"},
+    "reports": {
+        "starred": "INTEGER NOT NULL DEFAULT 0",
+        # Promoted out of the `data` blob: the card list needs the research mode
+        # and deliberately does not load the blob to get it.
+        "mode": "TEXT NOT NULL DEFAULT ''",
+    },
 }
 
 
 def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    added = False
     for table, columns in _LATE_COLUMNS.items():
         present = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         for name, decl in columns.items():
             if name not in present:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                added = True
+    if added:
+        _backfill_report_modes(conn)
     conn.commit()
+
+
+def _backfill_report_modes(conn: sqlite3.Connection) -> None:
+    """Fill in `mode` for reports written before the column existed.
+
+    The value was always recorded — inside `data` — so this recovers it rather
+    than guessing. Runs only for rows still holding the empty default, which
+    makes it a no-op on the second call and safe to leave in the startup path.
+    """
+    rows = conn.execute(
+        "SELECT report_id, data FROM reports WHERE mode = ''"
+    ).fetchall()
+    for row in rows:
+        try:
+            mode = json.loads(row["data"]).get("mode") or ""
+        except (ValueError, TypeError):
+            continue  # an unreadable blob is not worth failing startup over
+        if mode:
+            conn.execute(
+                "UPDATE reports SET mode=? WHERE report_id=?", (mode, row["report_id"])
+            )
 
 
 # ── tasks ─────────────────────────────────────────────────────────────────────
@@ -246,8 +277,8 @@ def save_report(report: Dict[str, Any], task_id: str = "") -> None:
         # without the sub-select those paths would silently unstar it.
         c.execute(
             "INSERT OR REPLACE INTO reports(report_id,task_id,title,subtitle,query,brands,experts,"
-            "cover_image,data,evidence_count,claim_count,high_conf_count,created_at,starred)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,"
+            "cover_image,data,evidence_count,claim_count,high_conf_count,created_at,mode,starred)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
             "COALESCE((SELECT starred FROM reports WHERE report_id=?),0))",
             (
                 report["id"],
@@ -263,6 +294,7 @@ def save_report(report: Dict[str, Any], task_id: str = "") -> None:
                 len(claims),
                 high,
                 report.get("created_at", _now()),
+                report.get("mode", ""),
                 report["id"],
             ),
         )
@@ -305,7 +337,7 @@ def list_reports() -> List[Dict[str, Any]]:
     c = _connect()
     rows = c.execute(
         "SELECT report_id,title,subtitle,query,brands,experts,cover_image,"
-        "evidence_count,claim_count,high_conf_count,created_at,starred FROM reports "
+        "evidence_count,claim_count,high_conf_count,created_at,mode,starred FROM reports "
         "ORDER BY created_at DESC"
     ).fetchall()
     out = []
