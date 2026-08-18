@@ -28,5 +28,10 @@ frontend/.vite/
 # Headless pipeline output
 report-*.json
 
+# Local launchers (Windows one-click) - kept out of the repo
+start.bat
+stop.bat
+scripts/vantage.ps1
+
 Vantage.code-workspace
 CLAUDE.md
