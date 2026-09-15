@@ -72,7 +72,7 @@ questions, and neither can answer the other's.
 | Stage | What happens |
 |---|---|
 | **intake** | The director breaks the brief into competitors, focus areas and search angles. |
-| **orchestrator** | A team is selected from the 48-analyst roster, each with a stated reason. |
+| **orchestrator** | A team is selected from the 52-analyst roster, each with a stated reason. |
 | **collect** | Per competitor: multi-angle search → fetch → relevance filter → `Evidence` with a credibility score. Then user voice across every registered platform. |
 | **analyze** | Cross-validation into claims, plus the structured feature/pricing/persona objects. Sentiment is classified here. |
 | **audit** | Rule-based quality evaluation plus a model review that scores each dimension. Either passes or emits `REWORK` envelopes. |
@@ -140,12 +140,14 @@ carries no inline citations by design.
 
 ## Model routing
 
-Gemini's free tier has no Pro model, so `_model(tier)` collapses to two:
+`llm.py` routes calls through two logical Gemini tiers. The concrete model names
+come from environment variables so local projects can track whichever Gemini
+models and quotas are currently available to them.
 
-| Tier | Model | Used for |
+| Tier | Config variable | Used for |
 |---|---|---|
-| `core` / `aux` | `gemini-3.5-flash` | Sections, cross-analysis, audit review |
-| `fast` | `gemini-3.5-flash-lite` | Intake, scope discovery, dispatch, sentiment classification |
+| `core` / `aux` | `GEMINI_MODEL_CORE` | Sections, cross-analysis, audit review |
+| `fast` | `GEMINI_MODEL_FAST` | Intake, scope discovery, dispatch, sentiment classification |
 
 Rate-limit buckets are per tier, and the fast tier only gets its own budget when
 it is genuinely a different model.

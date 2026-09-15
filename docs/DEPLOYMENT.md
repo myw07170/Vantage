@@ -7,47 +7,6 @@
 - Python ≥ 3.13, via [uv](https://docs.astral.sh/uv/)
 - Node.js ≥ 20
 
-### One-click (Windows)
-
-`start.bat` and `stop.bat` at the repo root wrap
-[`scripts/vantage.ps1`](../scripts/vantage.ps1), which does everything in this
-section: checks `uv` and `npm` are on PATH, creates `backend/.env` from the
-example if missing, runs `uv sync` (and `npm install` only when `node_modules`
-is absent or older than `package.json`), starts both services, waits until each
-actually answers, and records their PIDs.
-
-```powershell
-.\scripts\vantage.ps1                    # = -Action start
-.\scripts\vantage.ps1 -Action stop
-.\scripts\vantage.ps1 -Action status
-.\scripts\vantage.ps1 -Action restart
-```
-
-| Flag | Effect |
-|---|---|
-| `-Reload` | uvicorn `--reload`. Off by default: a file-watch restart mid-run kills an in-flight pipeline and its SSE stream. |
-| `-Show` | Visible console per service instead of logging to a file. |
-| `-SkipInstall` | Skip `uv sync` / `npm install`. |
-| `-NoBrowser` | Do not open a browser on success. |
-| `-BackendPort` / `-FrontendPort` | Defaults 8010 / 5173. |
-
-Three implementation details worth knowing if you edit it:
-
-- Each service runs via a generated `.cmd` in `.run-logs/`. That is what gives
-  one merged log per service — uvicorn writes to stderr and Vite to stdout, and
-  `Start-Process` cannot redirect both to a single file. The wrapper is left on
-  disk so you can see exactly what ran.
-- Stopping kills the process **tree** (`taskkill /T`). `uv run` and `npm run`
-  are launchers; killing them alone orphans the real `python.exe` and
-  `node.exe`. Stop also sweeps whatever still holds the two ports, so a service
-  started by hand gets cleaned up too.
-- Readiness polls the frontend on `localhost`, not `127.0.0.1` — Vite binds
-  IPv6 `[::1]` on Windows and the literal v4 address will not answer.
-
-`-BackendPort` also sets `VITE_API_BASE`, because `vite.config.ts` hardcodes the
-proxy target; and `FRONTEND_ORIGIN` is passed to the backend so CORS matches
-whatever frontend port you chose.
-
 ### Backend
 
 ```bash
@@ -78,9 +37,26 @@ npm run dev
 Vite serves on 5173 and proxies `/api` to `127.0.0.1:8010`. To point at a
 different backend, set `VITE_API_BASE`.
 
+### Optional local launchers
+
+Some maintainer worktrees may include local Windows launchers such as
+`start.bat`, `stop.bat`, or `scripts/vantage.ps1`. They are convenience tools,
+not part of the supported open-source startup path unless they are committed in
+a future release. A fresh clone should use the backend and frontend commands
+above.
+
 ## Verification
 
-Run these in order. Each one gates the next.
+Run deterministic checks first:
+
+```bash
+uv run pytest
+cd frontend
+npm run build
+npm run lint
+```
+
+Then run the external smoke tests when you have keys and network access:
 
 ```bash
 uv run python scripts/smoke_search.py    # provider contract shapes
@@ -195,6 +171,5 @@ checkpoint first.
 | Sections say "could not be generated" | Model calls failed. Check `/api/llm/ping`. |
 | Report with 1 claim and empty sections | The pipeline degraded gracefully around a failing model — collection still worked. Check the key. |
 | Frontend loads, all data empty | Backend unreachable. A toast reports the failed request; check the proxy target. |
-| `start.bat` says a port is in use | Something is already on 8010 or 5173. Run `stop.bat`, or pass `-BackendPort` / `-FrontendPort`. |
-| `start.bat` reports a service did not come up | It prints the last 15 log lines and the path to the full log in `.run-logs/`. |
-| `.ps1 cannot be loaded` from PowerShell | Execution policy. The `.bat` wrappers already pass `-ExecutionPolicy Bypass`; use those, or run `powershell -ExecutionPolicy Bypass -File scripts\vantage.ps1`. |
+| Backend port is in use | Something is already on 8010. Stop that process or choose another `--port`. |
+| Frontend port is in use | Vite uses `strictPort`; stop the process on 5173 or pass a different Vite port and update the backend origin. |

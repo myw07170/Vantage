@@ -1,4 +1,4 @@
-"""Loader for the 48-expert roster. Backend and frontend share one experts.json."""
+"""Loader for the 52-expert roster. Backend and frontend share one experts.json."""
 from __future__ import annotations
 
 import json
