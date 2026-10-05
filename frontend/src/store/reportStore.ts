@@ -8,6 +8,7 @@ interface ReportState {
   loading: boolean
   error: string | null
   load: (id: string) => Promise<void>
+  replaceReport: (report: Report) => void
 
   /** The report list, shared by the sidebar and the library so a delete in one
    *  is reflected in the other. Held in a store rather than in each view's own
@@ -29,6 +30,15 @@ export const useReportStore = create<ReportState>((set, get) => ({
   current: null,
   loading: false,
   error: null,
+  replaceReport: (report) => set((s) => ({
+    current: s.current?.id === report.id ? report : s.current,
+    cache: { ...s.cache, [report.id]: report },
+    cards: s.cards.map((card) => card.id === report.id ? {
+      ...card, title: report.title, subtitle: report.subtitle,
+      evidence_count: report.evidence.length, claim_count: report.claims.length,
+      high_conf_count: report.claims.filter((c) => c.confidence === 'high').length,
+    } : card),
+  })),
   load: async (id) => {
     const cached = get().cache[id]
     if (cached) {
@@ -94,5 +104,6 @@ export const useReportStore = create<ReportState>((set, get) => ({
       // Drop the detail cache too, or reopening the id would serve the deleted
       // report from memory instead of reporting it gone.
       cache: Object.fromEntries(Object.entries(s.cache).filter(([k]) => k !== id)),
+      current: s.current?.id === id ? null : s.current,
     })),
 }))

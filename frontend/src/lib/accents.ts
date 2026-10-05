@@ -70,15 +70,6 @@ export const ACCENT_CARD: Record<Accent, string> = {
   rose: 'bg-rose-tint/40',
 }
 
-/** Pastel surface only, for washes that carry their own text colour. */
-export const ACCENT_TINT: Record<Accent, string> = {
-  blue: 'bg-blue-tint',
-  indigo: 'bg-indigo-tint',
-  violet: 'bg-violet-tint',
-  orchid: 'bg-orchid-tint',
-  pink: 'bg-pink-tint',
-  rose: 'bg-rose-tint',
-}
 
 /** Solid fill, for dots, bars and legend swatches. */
 export const ACCENT_FILL: Record<Accent, string> = {

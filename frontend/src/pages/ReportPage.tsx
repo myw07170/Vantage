@@ -165,15 +165,10 @@ export default function ReportPage() {
     flash('Deepening this section from your notes…')
     const res = await refineSection(rid, sectionId, notes)
     setRefiningSec('')
-    if (res.ok && res.section) {
-      const next = {
-        ...current,
-        sections: current.sections.map((s) => (s.id === sectionId ? res.section! : s)),
-      }
-      useReportStore.setState((st) => ({
-        current: next,
-        cache: { ...st.cache, [rid]: next },
-      }))
+    if (res.ok && res.section && res.report) {
+      // A server rewrite replaces this section's prose, including local drafts.
+      useAnnotationStore.getState().clearSectionEdits(rid, sectionId)
+      useReportStore.getState().replaceReport(res.report)
       flash('Section updated')
     } else {
       flash(res.message || 'Could not deepen the section — try again')
@@ -181,24 +176,26 @@ export default function ReportPage() {
   }
 
   function toggleEditMode() {
-    setEditMode((v) => {
-      const leaving = v
-      if (leaving && current) {
-        // Leaving edit mode reports the real correction rate back to the server,
-        // which is what drives the human-correction metric.
-        const edits = annotations[rid]?.edits ?? {}
-        const editedBlocks = Object.keys(edits).length
-        const totalBlocks = current.sections.reduce(
-          (acc, s) => acc + (s.paragraphs?.length ?? 0) + (s.key_takeaway ? 1 : 0),
-          0,
-        )
-        if (editedBlocks > 0) {
-          submitFeedback(rid, editedBlocks, totalBlocks, { edits }).catch(() => {})
-          flash(`Recorded ${editedBlocks} of ${totalBlocks} blocks edited`)
-        }
+    const leaving = editMode
+    setEditMode(!editMode)
+    if (leaving && current) {
+      // Leaving edit mode reports the real correction rate back to the server,
+      // which is what drives the human-correction metric.
+      const edits = annotations[rid]?.edits ?? {}
+      const editedBlocks = Object.keys(edits).length
+      const totalBlocks = current.sections.reduce(
+        (acc, s) => acc + (s.paragraphs?.length ?? 0) + (s.key_takeaway ? 1 : 0),
+        0,
+      )
+      if (editedBlocks > 0) {
+        void submitFeedback(rid, Math.min(editedBlocks, totalBlocks), totalBlocks, { edits }).then((res) => {
+          if (res.ok && res.report) {
+            useReportStore.getState().replaceReport(res.report)
+            flash(`Recorded ${Math.min(editedBlocks, totalBlocks)} of ${totalBlocks} blocks edited`)
+          } else flash('Could not record your feedback. Try again.')
+        })
       }
-      return !v
-    })
+    }
   }
 
   /**

@@ -45,6 +45,18 @@ export interface CreateTaskResp {
   clarifyQuestions?: ClarifyQuestion[]
 }
 
+export interface TaskDetail {
+  taskId: string
+  query: string
+  mode: 'quick' | 'deep' | 'expert'
+  status: 'created' | 'clarified' | 'running' | 'done' | 'failed' | 'interrupted'
+  reportId: string | null
+  error: string
+  terminalSeq: number
+  clarifyQuestions: ClarifyQuestion[]
+  answers: Record<string, unknown>
+}
+
 /* ── SSE stream ──────────────────────────────────────────────────────────── */
 export type SSEEventType =
   | 'node_update'
@@ -295,6 +307,8 @@ export interface ReportFigure {
 }
 
 export interface Report {
+  llm_provider?: 'mock' | 'qwen' | 'openai'
+  is_mock?: boolean
   id: string
   title: string
   subtitle: string

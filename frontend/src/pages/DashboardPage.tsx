@@ -31,6 +31,7 @@ import {
   createSubscription,
   deleteSubscription,
   fetchWorkload,
+  createTask,
 } from '../lib/api'
 import type {
   DashboardStats,
@@ -80,6 +81,7 @@ export default function DashboardPage() {
   const [brandFilter, setBrandFilter] = useState<string>('')
   const [typeFilter, setTypeFilter] = useState<string>('')
   const [subQuery, setSubQuery] = useState('')
+  const [startingSub, setStartingSub] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -189,13 +191,25 @@ export default function DashboardPage() {
   const handleCreateSub = async () => {
     const q = subQuery.trim()
     if (!q) return
-    await createSubscription(q, [])
+    const created = await createSubscription(q, [])
+    if (!created) return
     setSubQuery('')
     setSubs(await fetchSubscriptions())
   }
   const handleDeleteSub = async (id: string) => {
-    await deleteSubscription(id)
+    const result = await deleteSubscription(id)
+    if (!result.ok) return
     setSubs(await fetchSubscriptions())
+  }
+  const handleResearchSub = async (subscription: Subscription) => {
+    if (startingSub) return
+    setStartingSub(subscription.sub_id)
+    try {
+      const task = await createTask(subscription.query, 'quick', subscription.sub_id)
+      if (task.taskId) navigate(`/clarify/${task.taskId}`, {
+        state: { query: subscription.query, clarify: task.clarifyQuestions },
+      })
+    } finally { setStartingSub('') }
   }
 
   const empty = !loading && (!stats || stats.reports === 0)
@@ -647,6 +661,13 @@ export default function DashboardPage() {
                           </button>
                         </div>
                         <div className="mt-2 flex items-center gap-2 text-tag text-ink-3">
+                          <button
+                            onClick={() => handleResearchSub(s)}
+                            disabled={Boolean(startingSub)}
+                            className="text-primary-deep hover:underline disabled:opacity-50"
+                          >
+                            {startingSub === s.sub_id ? 'Starting…' : 'Research now'}
+                          </button>
                           <span>Run {plural(s.run_count, 'time')}</span>
                           {s.last_report_id && (
                             <button

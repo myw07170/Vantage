@@ -113,7 +113,6 @@ export const PLATFORM_STYLE: Record<string, { bg: string; fg: string }> = {
   web: { bg: '#6C7A8C', fg: '#FFFFFF' },
 }
 
-export const platformLabel = (p: string) => PLATFORM_LABEL[p] ?? p
 
 /* ── Claim confidence ────────────────────────────────────────────────────── */
 export const CONFIDENCE_LABEL: Record<Confidence, string> = {
@@ -123,12 +122,6 @@ export const CONFIDENCE_LABEL: Record<Confidence, string> = {
   unverified: 'Unverified',
 }
 
-export const CONFIDENCE_STYLE: Record<Confidence, string> = {
-  high: 'bg-primary-tint text-primary-deep',
-  medium: 'bg-sun-soft text-warn-deep',
-  low: 'bg-risk/15 text-risk-deep',
-  unverified: 'bg-paper text-ink-2',
-}
 
 /* ── Thought stream kinds ────────────────────────────────────────────────── */
 export const THOUGHT_LABEL: Record<string, string> = {

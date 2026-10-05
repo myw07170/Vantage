@@ -165,8 +165,9 @@ carries its source.
 
 ## Collection ethics
 
-Collection uses public sources only. The fetcher honours `robots.txt`
-conventions, applies a per-domain delay, and identifies itself with a normal
-user agent. No credentialed scraping, no pretexting, no circumventing paywalls —
+Collection uses public sources only. The fetcher blocks private/local source addresses, validates redirects, limits
+response bodies, pins connections to checked public addresses, and applies a
+per-domain delay. It uses a browser-style user agent. Automatic `robots.txt`
+checking is not implemented; callers must review source policies before collection. No credentialed scraping, no pretexting, no circumventing paywalls —
 consistent with SCIP's practice standards, which the competitive-intelligence
 lead's profile reflects.

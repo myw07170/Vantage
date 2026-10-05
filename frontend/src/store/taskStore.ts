@@ -152,9 +152,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   ingest: (type, data, id = 0) => {
     const s = get()
-    // On reconnect the server replays from the start of the run. Anything at or
-    // below the highest id we have already appended would otherwise show up
-    // twice in the thought stream and evidence feed.
+    // Reject replayed events; the server's sequence belongs to the task.
     if (id > 0 && id <= s.lastEventId) return
     const d = asObj(data)
     const seq = id > 0 ? { lastEventId: id } : {}
@@ -220,6 +218,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         set({
           error: (d.message as string) ?? 'An unknown error occurred.',
           running: false,
+          streamStatus: 'closed',
           ...seq,
         })
         return

@@ -24,7 +24,7 @@ Browser
         ┌───────────────┬───────────┼───────────┬───────────────┐
         ▼               ▼           ▼           ▼               ▼
     llm.py          search/     fetcher.py  credibility.py   trace.py
-   (Gemini)      (Exa/Tavily/    (httpx +     (0-100 score)  (span buffer)
+   (providers)   (Exa/Tavily/    (httpx +     (0-100 score)  (span buffer)
         │            DDG)       trafilatura)                      │
         ▼               │                                         │
    ratelimit.py         │                                         │
@@ -39,8 +39,10 @@ never blocks while a page is being fetched or a model is thinking.
 
 | Module | Responsibility |
 |---|---|
+| `tasks.py` | Runs each task once, retains live events for subscribers, persists terminal state. |
 | `orchestrator.py` | The pipeline. One async generator that yields SSE events as it walks the stages. |
-| `llm.py` | Gemini wrapper: `chat`, `chat_json`, `chat_schema`. Native JSON mode, token accounting, trace hook. |
+| `llm.py` | Provider-neutral `chat`, `chat_json`, `chat_schema`: HTTP completions, JSON mode, retries, token accounting, trace hook. |
+| `llm_mock.py` | Deterministic model substitute using explicit task kinds and input context; no model network, fabricated prices or citations. |
 | `ratelimit.py` | Thread-safe RPM/RPD/TPM token buckets plus a concurrency semaphore. |
 | `search/` | Provider protocol and adapters, with failover and relevance filtering. |
 | `fetcher.py` | Page fetch and article extraction, with per-domain politeness and an in-process cache. |
@@ -140,17 +142,40 @@ carries no inline citations by design.
 
 ## Model routing
 
-`llm.py` routes calls through two logical Gemini tiers. The concrete model names
-come from environment variables so local projects can track whichever Gemini
-models and quotas are currently available to them.
+`LLM_PROVIDER=mock|qwen|openai` selects one provider for the process; restart to
+switch. Mock is the default. Qwen and OpenAI share an `httpx` adapter for
+`/chat/completions`. Qwen uses `max_tokens` with thinking disabled; OpenAI uses
+`max_completion_tokens`. JSON mode adds a JSON instruction and `json_object`
+response format. Array results use an `items` wrapper, unwrapped on parsing.
+Optional schemas are prompt constraints, followed by the existing tolerant
+coercion; they are not a guarantee of strict server-side schema validation.
 
 | Tier | Config variable | Used for |
 |---|---|---|
-| `core` / `aux` | `GEMINI_MODEL_CORE` | Sections, cross-analysis, audit review |
-| `fast` | `GEMINI_MODEL_FAST` | Intake, scope discovery, dispatch, sentiment classification |
+| `core` / `aux` | `OPENAI_MODEL_CORE` / `QWEN_MODEL_CORE` | Sections, cross-analysis, audit review |
+| `fast` | `OPENAI_MODEL_FAST` / `QWEN_MODEL_FAST` | Intake, scope discovery, dispatch, sentiment classification |
 
 Rate-limit buckets are per tier, and the fast tier only gets its own budget when
-it is genuinely a different model.
+it is genuinely a different model. `LLM_RPM_*`, `LLM_RPD_*` and `LLM_TPM_*`
+are per-process local budgets (0 disables the cap), and
+`LLM_MAX_CONCURRENCY` defaults to 4. Daily caps reset at midnight fixed UTC-08:00,
+not according to a provider's account quota reset. Retryable network/status
+failures release their concurrency lease before bounded backoff.
+
+All LLM methods accept optional `task_kind` and `mock_context` keyword arguments.
+Research call sites pass an operation and structured source context; real HTTP
+requests do not include these fields. Mock copies supplied excerpts, applies the
+existing sentiment keyword rules and returns actual rule-side review scores.
+Unsupported pricing/persona data remains empty. Mechanical checks and rework
+budgets still run, and a simulated report can remain flagged. Search, fetching,
+social collection and SQLite still execute normally. Offline tests replace only
+collection inputs and use a temporary database.
+
+Mock bypasses model quotas, records `mock:` trace model names with zero tokens,
+and reports `{}` for quota usage. `/health` and `/api/llm/ping` expose
+`llm_provider` and `is_mock`. Persisted reports include the same metadata and a
+visible `[MOCK] 模拟报告` subtitle. Existing report JSON storage needs no migration.
+Gemini and its SDK were removed; old `GEMINI_*` settings are ignored.
 
 ## Evidence and claims
 
@@ -185,14 +210,31 @@ persisted with the report for the decision-replay view.
 
 ## SSE
 
-`GET /api/tasks/{id}/stream` **starts** the research; it is not idempotent.
-Each event carries a monotonic `id:`, and the client de-duplicates on it so a
-browser reconnect does not double up the thought stream. The client caps
-reconnection attempts, because unbounded retry against a non-idempotent endpoint
-would launch duplicate runs.
+`POST /api/tasks` persists the identified subject, questionnaire, mode and optional
+`subscription_id`. `GET /api/tasks/{id}` restores the question, questionnaire,
+answers, state and report link; unknown IDs return 404. Rival selections extend
+the primary subject rather than replacing it.
 
-Event types: `node_update`, `thought`, `message`, `evidence`, `chart`, `image`,
-`progress`, `trace`, `report_ready`, `done`, `error`.
+`GET /api/tasks/{id}/stream` reserves an unstarted task once. `TaskRunner` owns a
+background producer independently of SSE connections. Concurrent subscribers
+share the same producer and in-memory event buffer. Event IDs increase for that
+task; `Last-Event-ID` and the `after` query parameter resume after a cursor.
+Closing a subscriber never cancels the research job. The browser caps retries at
+three for the lifetime of a subscription, and closes on `done` or a business
+`error` event.
+
+Completed jobs release their live buffer; reconnects use the saved terminal
+sequence and report ID. Failure and interruption are terminal and require a new
+task. Startup marks previously running tasks interrupted; shutdown cancels jobs
+and persists interruption. This is single-process execution, not durable job
+resumption after a backend restart. Deleted reports produce 410 for their task
+streams rather than silently starting over.
+
+Fatal model configuration, authentication and quota errors propagate through
+fallbacks and terminate a job. Malformed model output can still use the existing
+repair path, but a report whose authored sections all fail after verification
+is not saved as a successful result.
+
 
 ## Storage
 

@@ -184,7 +184,7 @@ def llm_quality_review(
     `persona` is the quality officer's preamble, built by the caller so this
     module stays independent of the roster.
     """
-    from app.core.llm import chat_json
+    from app.core.llm import chat_json, raise_if_fatal
 
     claim_lines = (
         "\n".join(
@@ -271,6 +271,8 @@ def llm_quality_review(
             temperature=0.3,
             model=model,
             purpose="Quality review: score dimensions, list issues and fixes",
+            task_kind="quality_review",
+            mock_context={"rule_review": fallback},
         )
         if isinstance(data, dict) and data.get("scores"):
             scores = {
@@ -287,7 +289,8 @@ def llm_quality_review(
                     str(x) for x in (data.get("suggestions") or []) if str(x).strip()
                 ][:8],
             }
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         pass
     return fallback
 

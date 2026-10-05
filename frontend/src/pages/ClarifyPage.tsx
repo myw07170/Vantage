@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowRight, SkipForward } from 'lucide-react'
 import type { ClarifyQuestion } from '../types'
-import { submitClarify } from '../lib/api'
+import { fetchTask, submitClarify } from '../lib/api'
 import { VSunGlow } from '../components/ui'
 import { VLogo } from '../components/VLogo'
 import { fadeUp, stagger } from '../lib/motion'
@@ -17,17 +17,36 @@ export default function ClarifyPage() {
   const { taskId } = useParams()
   const navigate = useNavigate()
   const { state } = useLocation() as { state: NavState | null }
-  const query = state?.query ?? ''
-  const questions = state?.clarify ?? []
+  const [query, setQuery] = useState(state?.query ?? '')
+  const [questions, setQuestions] = useState<ClarifyQuestion[]>(state?.clarify ?? [])
+  const [loading, setLoading] = useState(!state?.clarify)
+  const [error, setError] = useState('')
   const [answers, setAnswers] = useState<Record<string, unknown>>({})
   const [submitting, setSubmitting] = useState(false)
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
 
-  // Landing here directly (e.g. a refresh) means there is nothing to clarify.
-  if (!taskId || questions.length === 0) {
-    navigate(`/workspace/${taskId}`, { replace: true, state: { query } })
-    return null
-  }
+  useEffect(() => {
+    if (state?.clarify || !taskId) return
+    let disposed = false
+    void fetchTask(taskId).then((task) => {
+      if (disposed) return
+      setLoading(false)
+      if (!task) {
+        setError('Could not load this task. Check the backend and try again.')
+        return
+      }
+      if (task.status === 'done' && task.reportId) {
+        navigate(`/report/${task.reportId}`, { replace: true })
+      } else if (task.status !== 'created' && task.status !== 'clarified') {
+        navigate(`/workspace/${taskId}`, { replace: true })
+      } else {
+        setQuery(task.query)
+        setQuestions(task.clarifyQuestions)
+        setAnswers(task.answers)
+      }
+    })
+    return () => { disposed = true }
+  }, [taskId, state, navigate])
 
   function setSingle(qid: string, val: string) {
     setAnswers((a) => ({ ...a, [qid]: val }))
@@ -63,12 +82,17 @@ export default function ClarifyPage() {
   async function go() {
     if (submitting || !taskId) return
     setSubmitting(true)
+    setError('')
     try {
-      await submitClarify(taskId, answers)
+      const result = await submitClarify(taskId, answers)
+      if (result.ok) navigate(`/workspace/${taskId}`, { state: { query } })
+      else setError('Could not save your answers. Try again before starting research.')
     } finally {
-      navigate(`/workspace/${taskId}`, { state: { query } })
+      setSubmitting(false)
     }
   }
+
+  if (loading) return <div className="p-8 text-ink-2">Loading task…</div>
 
   return (
     <div className="relative min-h-screen overflow-y-auto bg-bg">
@@ -184,15 +208,17 @@ export default function ClarifyPage() {
         </motion.div>
 
         <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
+          {error && <p role="alert" className="w-full text-aux text-risk-deep">{error}</p>}
           <button
             onClick={go}
+            disabled={submitting || questions.length === 0}
             className="inline-flex items-center gap-1.5 text-aux text-ink-3 transition-colors hover:text-ink-2"
           >
             <SkipForward size={15} /> Skip and start now
           </button>
           <button
             onClick={go}
-            disabled={submitting}
+            disabled={submitting || questions.length === 0}
             className="inline-flex h-12 items-center justify-center gap-2 rounded-btn bg-primary-deep px-6 font-medium text-white shadow-card transition-all hover:bg-primary-deeper hover:shadow-float active:scale-95 disabled:opacity-50"
           >
             {submitting ? 'Assembling the team…' : 'Start research'}

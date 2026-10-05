@@ -10,6 +10,7 @@ import type {
   SSEEventType,
   StreamStatus,
   Subscription,
+  TaskDetail,
   TraceSpan,
 } from '../types'
 
@@ -32,7 +33,10 @@ export function setApiErrorListener(fn: ApiErrorListener | null) {
 async function safeJson<T>(path: string, init?: RequestInit, fallback?: T): Promise<T> {
   try {
     const r = await fetch(`${API_BASE}${path}`, init)
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    if (!r.ok) {
+      const body = await r.json().catch(() => null)
+      throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${r.status}`)
+    }
     return (await r.json()) as T
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -61,16 +65,21 @@ export async function fetchExperts(): Promise<Expert[]> {
 export async function createTask(
   query: string,
   mode: string = 'deep',
+  subscriptionId?: string,
 ): Promise<CreateTaskResp> {
   return safeJson<CreateTaskResp>(
     '/api/tasks',
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, mode }),
+      body: JSON.stringify({ query, mode, subscription_id: subscriptionId ?? '' }),
     },
     { taskId: '', needClarify: false },
   )
+}
+
+export async function fetchTask(taskId: string): Promise<TaskDetail | null> {
+  return safeJson<TaskDetail | null>(`/api/tasks/${taskId}`, undefined, null)
 }
 
 export async function submitClarify(
@@ -84,7 +93,7 @@ export async function submitClarify(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ answers }),
     },
-    { ok: true },
+    { ok: false },
   )
 }
 
@@ -103,7 +112,7 @@ export async function submitFeedback(
   editedBlocks: number,
   totalBlocks: number,
   data: Record<string, unknown> = {},
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; report?: Report }> {
   return safeJson(
     `/api/reports/${reportId}/feedback`,
     {
@@ -115,7 +124,7 @@ export async function submitFeedback(
         data,
       }),
     },
-    { ok: true },
+    { ok: false },
   )
 }
 
@@ -123,7 +132,7 @@ export async function refineSection(
   reportId: string,
   sectionId: string,
   annotations: string[],
-): Promise<{ ok: boolean; section?: ReportSection; message?: string }> {
+): Promise<{ ok: boolean; section?: ReportSection; report?: Report; message?: string }> {
   return safeJson(
     `/api/reports/${reportId}/refine`,
     {
@@ -205,7 +214,7 @@ export async function createSubscription(
 }
 
 export async function deleteSubscription(subId: string): Promise<{ ok: boolean }> {
-  return safeJson(`/api/subscriptions/${subId}`, { method: 'DELETE' }, { ok: true })
+  return safeJson(`/api/subscriptions/${subId}`, { method: 'DELETE' }, { ok: false })
 }
 
 export async function fetchWorkload(): Promise<ExpertWorkload[]> {
@@ -238,17 +247,8 @@ const SSE_TYPES: SSEEventType[] = [
 /**
  * Subscribe to a task's event stream.
  *
- * Two things the browser's built-in EventSource does not give us:
- *
- * 1. **Distinguishing a clean finish from a dropped connection.** EventSource
- *    fires `error` on both. We track whether the pipeline sent `done` and treat
- *    anything else as a genuine disconnect worth showing the user.
- * 2. **Bounded reconnection.** The backend's GET *starts* the research, so an
- *    unbounded auto-retry would kick off duplicate runs. We cap attempts and
- *    then stop, leaving the UI to offer a manual retry.
- *
- * Duplicate suppression lives in the store, keyed on the `id` passed through
- * here, because a reconnect replays events the store has already ingested.
+ * Research belongs to the server task. Reconnect with a cursor, at most three
+ * times per subscription, and close immediately on either terminal event.
  */
 export function openTaskStream(taskId: string, handlers: SSEHandlers): () => void {
   const url = `${API_BASE}/api/tasks/${taskId}/stream`
@@ -258,35 +258,50 @@ export function openTaskStream(taskId: string, handlers: SSEHandlers): () => voi
   let finished = false
   let disposed = false
   let retries = 0
+  let lastEventId = 0
   let retryTimer: number | undefined
 
   const connect = () => {
     if (disposed) return
     handlers.onStatus?.(retries === 0 ? 'connecting' : 'reconnecting')
-    es = new EventSource(url)
+    if (finished) return
+    const source = new EventSource(`${url}?after=${lastEventId}`)
+    es = source
 
-    es.onopen = () => {
-      retries = 0
+    source.onopen = () => {
+      if (disposed || finished || source !== es) return
       handlers.onStatus?.('open')
       handlers.onOpen?.()
     }
 
     for (const t of SSE_TYPES) {
-      es.addEventListener(t, (ev) => {
+      source.addEventListener(t, (ev) => {
+        if (disposed || finished || source !== es) return
         const me = ev as MessageEvent
+        if (typeof me.data !== 'string') return // native transport error
+        const id = Number(me.lastEventId || 0)
+        if (id > 0 && id <= lastEventId) return
+        if (id > 0) lastEventId = id
         let parsed: unknown = me.data
         try {
           parsed = JSON.parse(me.data)
         } catch {
           /* keep the raw string */
         }
-        if (t === 'done') finished = true
-        handlers.onEvent(t, parsed, Number(me.lastEventId || 0))
+        if (t === 'done' || t === 'error') {
+          finished = true
+          source.close()
+          window.clearTimeout(retryTimer)
+          handlers.onStatus?.('closed')
+        }
+        handlers.onEvent(t, parsed, id)
       })
     }
 
-    es.onerror = () => {
-      es?.close()
+    source.onerror = (ev) => {
+      if (ev instanceof MessageEvent) return // business error is handled above
+      source.close()
+      if (source !== es) return
       if (disposed) return
       if (finished) {
         // EventSource always errors when the server closes a finished stream.

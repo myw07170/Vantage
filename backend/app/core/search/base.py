@@ -11,7 +11,7 @@ Exa) populate it, which lets the collector skip a fetch round-trip.
 from __future__ import annotations
 
 import datetime as _dt
-from typing import Optional, Protocol, runtime_checkable
+from typing import Optional
 
 
 class Freshness:
@@ -50,23 +50,3 @@ class SearchUnavailable(RuntimeError):
 
 def now_iso() -> str:
     return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-@runtime_checkable
-class SearchProvider(Protocol):
-    name: str
-
-    def available(self) -> bool:
-        """False when the provider has no key configured."""
-        ...
-
-    def search(
-        self,
-        query: str,
-        *,
-        num: int = 10,
-        site: Optional[str] = None,
-        freshness: str = Freshness.ANY,
-    ) -> list[dict]:
-        """Return normalized results, or raise SearchUnavailable to fail over."""
-        ...

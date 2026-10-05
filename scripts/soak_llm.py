@@ -1,15 +1,12 @@
-"""Phase 1 gate: is Gemini's free tier actually usable for this pipeline?
+"""Concurrent completions against the selected LLM provider.
 
-This is the decisive test. The pipeline fans out up to 12 concurrent section
-writes; the free tier allows roughly 10 requests/minute. If the rate limiter
-works, a burst is paced smoothly and nothing 429s. If it does not, this fails
-loudly here rather than halfway through a research run.
+Mock exercises concurrent local calls. Real calls use configured local budgets;
+set LLM_RPM_CORE to a positive cap to exercise pacing.
 
     uv run python scripts/soak_llm.py
     uv run python scripts/soak_llm.py 24     # burst size
 
-Passing means: zero unretried 429s, and observed RPM at or under the configured
-cap. A slow run is fine — being throttled is the point.
+Passing means every concurrent completion succeeds without unretried 429s.
 """
 from __future__ import annotations
 
@@ -35,6 +32,8 @@ def worker(i: int, start: float) -> None:
             [{"role": "user", "content": f"Reply with only this number: {i}"}],
             max_tokens=16,
             temperature=0.0,
+            task_kind="echo",
+            mock_context={"text": str(i)},
         )
     except Exception as e:  # noqa: BLE001
         err = f"{type(e).__name__}: {e}"
@@ -46,14 +45,15 @@ def main() -> int:
     burst = int(sys.argv[1]) if len(sys.argv) > 1 else 20
     settings = get_settings()
     if not settings.llm_configured:
-        print("FAIL  GEMINI_API_KEY is not set")
+        print(f"FAIL  {settings.llm_configuration_error}")
         return 1
 
-    rpm = settings.gemini_rpm_core
-    print(f"model:       {settings.gemini_model_core}")
+    rpm = settings.llm_rpm_core
+    print(f"provider: {settings.llm_provider}")
+    print(f"model:       {settings.llm_model_core}")
     print(f"burst size:  {burst} concurrent calls")
-    print(f"configured:  {rpm} rpm, max concurrency {settings.gemini_max_concurrency}")
-    expected = max(0.0, (burst - rpm) / max(rpm, 1) * 60.0)
+    print(f"configured:  {rpm} rpm, max concurrency {settings.llm_max_concurrency}")
+    expected = max(0.0, (burst - rpm) / rpm * 60.0) if rpm > 0 and not settings.is_mock else 0.0
     print(f"expect this to take roughly {expected:.0f}s if throttling works\n")
 
     start = time.monotonic()
@@ -82,10 +82,10 @@ def main() -> int:
     ok = not rate_limited and len(errors) == 0
     print()
     if ok:
-        print("SOAK PASSED — the free tier can drive the pipeline.")
+        print("SOAK PASSED — all concurrent completions succeeded.")
     else:
-        print("SOAK FAILED — lower GEMINI_RPM_CORE / GEMINI_MAX_CONCURRENCY in .env,")
-        print("or check your real limits at https://aistudio.google.com/rate-limit")
+        print("SOAK FAILED — check provider access and limits; set LLM_RPM_CORE /")
+        print("LLM_MAX_CONCURRENCY in backend/.env to fit your actual account quota.")
     return 0 if ok else 1
 
 

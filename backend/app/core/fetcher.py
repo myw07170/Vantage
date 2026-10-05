@@ -12,6 +12,8 @@ stage re-runs during rework rounds:
 from __future__ import annotations
 
 import datetime as _dt
+import ipaddress
+import socket
 import threading
 import time
 from collections import OrderedDict
@@ -27,6 +29,44 @@ _UA = (
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 _TIMEOUT = httpx.Timeout(connect=8, read=20, write=5, pool=5)
+_MAX_BODY = 2 * 1024 * 1024
+_MAX_REDIRECTS = 5
+
+
+class UnsafeURL(ValueError):
+    """A source must never reach a local or private network service."""
+
+
+def public_addresses(url: str) -> list[str]:
+    try:
+        parsed = httpx.URL(url)
+    except httpx.InvalidURL as exc:
+        raise UnsafeURL("Invalid source URL.") from exc
+    if parsed.scheme not in ("http", "https") or not parsed.host or parsed.userinfo:
+        raise UnsafeURL("Only public HTTP/HTTPS source URLs are allowed.")
+    try:
+        addresses = list(dict.fromkeys(
+            row[4][0] for row in socket.getaddrinfo(parsed.host, parsed.port or (443 if parsed.scheme == "https" else 80),
+                                                  type=socket.SOCK_STREAM)
+        ))
+    except OSError as exc:
+        raise UnsafeURL("Source hostname could not be resolved safely.") from exc
+    if not addresses or any(not ipaddress.ip_address(address).is_global or
+                            ipaddress.ip_address(address).is_multicast for address in addresses):
+        raise UnsafeURL("Local, private and reserved source addresses are blocked.")
+    return addresses
+
+
+class PublicHTTPTransport(httpx.HTTPTransport):
+    """Connect to the validated address, keeping the original Host and TLS SNI."""
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        addresses = public_addresses(str(request.url))
+        pinned = httpx.Request(
+            request.method, request.url.copy_with(host=addresses[0]),
+            headers=request.headers, stream=request.stream,
+            extensions={**request.extensions, "sni_hostname": request.url.host},
+        )
+        return super().handle_request(pinned)
 
 # Minimum gap between requests to the same host.
 _POLITENESS_DELAY = 1.0
@@ -81,11 +121,6 @@ def _cache_put(url: str, value: Dict[str, Any]) -> None:
             _cache.popitem(last=False)
 
 
-def clear_cache() -> None:
-    with _cache_lock:
-        _cache.clear()
-
-
 def fetch_page(
     url: str, *, fallback_snippet: str = "", prefetched_text: str = ""
 ) -> Dict[str, Any]:
@@ -99,6 +134,11 @@ def fetch_page(
 
     Returns `{url, text, images, og_image, ok, degraded, captured_at}`.
     """
+    try:
+        public_addresses(url)
+    except (UnsafeURL, httpx.InvalidURL, ValueError) as exc:
+        return {"url": url, "text": "", "images": [], "og_image": "", "ok": False,
+                "degraded": True, "blocked": True, "reason": str(exc), "captured_at": _now()}
     if prefetched_text and len(prefetched_text) >= 200:
         return {
             "url": url,
@@ -126,11 +166,31 @@ def fetch_page(
         _wait_turn(domain_of(url))
         with httpx.Client(
             timeout=_TIMEOUT,
-            follow_redirects=True,
+            follow_redirects=False,
+            transport=PublicHTTPTransport(),
+            trust_env=False,
             headers={"User-Agent": _UA, "Accept-Language": "en-US,en;q=0.9"},
         ) as client:
-            r = client.get(url)
-            r.raise_for_status()
+            current_url = url
+            for hop in range(_MAX_REDIRECTS + 1):
+                public_addresses(current_url)
+                with client.stream("GET", current_url) as r:
+                    if r.status_code in (301, 302, 303, 307, 308):
+                        if hop == _MAX_REDIRECTS or not r.headers.get("location"):
+                            raise ValueError("Too many or invalid source redirects.")
+                        current_url = urljoin(current_url, r.headers["location"])
+                        continue
+                    r.raise_for_status()
+                    if int(r.headers.get("content-length", "0")) > _MAX_BODY:
+                        raise ValueError("Source response exceeds the body limit.")
+                    body = bytearray()
+                    for chunk in r.iter_bytes(chunk_size=65536):
+                        body.extend(chunk)
+                        if len(body) > _MAX_BODY:
+                            raise ValueError("Source response exceeds the body limit.")
+                    headers = {k: v for k, v in r.headers.items() if k not in ("content-encoding", "content-length")}
+                    r = httpx.Response(r.status_code, headers=headers, content=bytes(body), request=r.request)
+                    break
             html = r.text
             # httpx decodes using the declared charset; a wrong declaration
             # yields mojibake. Retry the common Western encodings on the raw
@@ -154,12 +214,14 @@ def fetch_page(
         result.update(
             {
                 "text": text[:4000],
-                "images": _extract_images(html, url)[:6],
-                "og_image": _extract_og_image(html, url),
+                "images": _extract_images(html, current_url)[:6],
+                "og_image": _extract_og_image(html, current_url),
                 "ok": True,
                 "degraded": False,
             }
         )
+    except UnsafeURL as exc:
+        result.update(text="", blocked=True, reason=str(exc))
     except Exception:
         # Degrade to the snippet — credibility scoring already penalizes this.
         pass

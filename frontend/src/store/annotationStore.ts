@@ -56,6 +56,7 @@ interface AnnotationState {
   knowledge: KBEntry[]
   setEdit: (reportId: string, blockId: string, text: string) => void
   getEdit: (reportId: string, blockId: string) => string | undefined
+  clearSectionEdits: (reportId: string, sectionId: string) => void
   addHighlight: (reportId: string, h: Omit<Highlight, 'id' | 'createdAt'>) => void
   updateHighlight: (reportId: string, id: string, patch: Partial<Highlight>) => void
   removeHighlight: (reportId: string, id: string) => void
@@ -104,6 +105,19 @@ export const useAnnotationStore = create<AnnotationState>((set, get) => ({
     }),
 
   getEdit: (reportId, blockId) => get().annotations[reportId]?.edits[blockId],
+
+  clearSectionEdits: (reportId, sectionId) =>
+    set((s) => {
+      const cur = s.annotations[reportId]
+      if (!cur) return s
+      const edits = Object.fromEntries(Object.entries(cur.edits).filter(([id]) =>
+        id !== `${sectionId}-takeaway` &&
+        !(id.startsWith(`${sectionId}-p`) && /^\d+$/.test(id.slice(sectionId.length + 2))),
+      ))
+      const next = { ...s.annotations, [reportId]: { ...cur, edits } }
+      save(LS_KEY, next)
+      return { annotations: next }
+    }),
 
   addHighlight: (reportId, h) =>
     set((s) => {

@@ -6,12 +6,6 @@ const dateFmt = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',
 })
-const dateTimeFmt = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-})
 
 export const num = (n: number | null | undefined) =>
   n == null || Number.isNaN(n) ? '—' : numberFmt.format(n)
@@ -21,12 +15,6 @@ export function formatDate(iso: string | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? iso : dateFmt.format(d)
-}
-
-export function formatDateTime(iso: string | undefined): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : dateTimeFmt.format(d)
 }
 
 /** `1` -> "1 source", `3` -> "3 sources". */
@@ -57,12 +45,4 @@ export function duration(minutes: number | null | undefined): string {
   const h = Math.floor(minutes / 60)
   const m = Math.round(minutes % 60)
   return m ? `${h}h ${m}m` : `${h}h`
-}
-
-export function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return url
-  }
 }

@@ -1,7 +1,7 @@
 """SQLite persistence: tasks, reports, evidence, subscriptions, expert stats, traces.
 
-Everything goes through here — no in-memory dict is ever the source of truth,
-so navigating away, refreshing or restarting never loses work.
+Tasks and completed reports survive refreshes and restarts. Running event
+buffers live in the task runner; a process restart marks unfinished work interrupted.
 
 Concurrency note: the orchestrator spawns many worker threads via
 `asyncio.to_thread`, and a single `sqlite3.Connection` shared across them
@@ -180,6 +180,10 @@ def _init_schema(conn: sqlite3.Connection) -> None:
 # or every existing vantage.db would break on the first query that names it.
 # Additive only: give each one a default, never drop or retype.
 _LATE_COLUMNS: Dict[str, Dict[str, str]] = {
+    "tasks": {
+        "terminal_seq": "INTEGER NOT NULL DEFAULT 0",
+        "error": "TEXT NOT NULL DEFAULT ''",
+    },
     "reports": {
         "starred": "INTEGER NOT NULL DEFAULT 0",
         # Promoted out of the `data` blob: the card list needs the research mode
@@ -235,14 +239,16 @@ def save_task(task_id: str, query: str, clarifications: Dict[str, Any]) -> None:
         c.commit()
 
 
-def update_task_clarify(task_id: str, clarifications: Dict[str, Any]) -> None:
+def update_task_clarify(task_id: str, clarifications: Dict[str, Any]) -> bool:
     with _LOCK:
         c = _connect()
-        c.execute(
-            "UPDATE tasks SET clarifications=?, status='clarified' WHERE task_id=?",
+        changed = c.execute(
+            "UPDATE tasks SET clarifications=?, status='clarified' WHERE task_id=? "
+            "AND status IN ('created','clarified')",
             (json.dumps(clarifications), task_id),
         )
         c.commit()
+        return changed.rowcount == 1
 
 
 def get_task(task_id: str) -> Optional[Dict[str, Any]]:
@@ -265,6 +271,39 @@ def mark_task_done(task_id: str, report_id: str) -> None:
         c.commit()
 
 
+def claim_task(task_id: str) -> bool:
+    """Atomically reserve a task before scheduling its only research run."""
+    with _LOCK:
+        c = _connect()
+        changed = c.execute(
+            "UPDATE tasks SET status='running', error='' WHERE task_id=? "
+            "AND status IN ('created','clarified')", (task_id,),
+        )
+        c.commit()
+        return changed.rowcount == 1
+
+
+def finish_task(task_id: str, status: str, seq: int, error: str = "") -> None:
+    with _LOCK:
+        c = _connect()
+        c.execute(
+            "UPDATE tasks SET status=?, terminal_seq=?, error=? WHERE task_id=?",
+            (status, seq, error, task_id),
+        )
+        c.commit()
+
+
+def interrupt_running_tasks() -> None:
+    with _LOCK:
+        c = _connect()
+        c.execute(
+            "UPDATE tasks SET status='interrupted', terminal_seq=MAX(terminal_seq,1), "
+            "error='Research was interrupted by a backend restart. Create a new task.' "
+            "WHERE status='running'",
+        )
+        c.commit()
+
+
 # ── reports + evidence ────────────────────────────────────────────────────────
 def save_report(report: Dict[str, Any], task_id: str = "") -> None:
     evidence = report.get("evidence", [])
@@ -282,7 +321,7 @@ def save_report(report: Dict[str, Any], task_id: str = "") -> None:
             "COALESCE((SELECT starred FROM reports WHERE report_id=?),0))",
             (
                 report["id"],
-                task_id,
+                task_id or _existing_report_task(c, report["id"]),
                 report.get("title", ""),
                 report.get("subtitle", ""),
                 report.get("query", ""),
@@ -320,6 +359,11 @@ def save_report(report: Dict[str, Any], task_id: str = "") -> None:
                 ),
             )
         c.commit()
+
+
+def _existing_report_task(conn: sqlite3.Connection, report_id: str) -> str:
+    row = conn.execute("SELECT task_id FROM reports WHERE report_id=?", (report_id,)).fetchone()
+    return (row["task_id"] or "") if row else ""
 
 
 def get_report(report_id: str) -> Optional[Dict[str, Any]]:
@@ -603,11 +647,12 @@ def get_subscription(sub_id: str) -> Optional[Dict[str, Any]]:
     return d
 
 
-def delete_subscription(sub_id: str) -> None:
+def delete_subscription(sub_id: str) -> bool:
     with _LOCK:
         c = _connect()
-        c.execute("DELETE FROM subscriptions WHERE sub_id=?", (sub_id,))
+        changed = c.execute("DELETE FROM subscriptions WHERE sub_id=?", (sub_id,))
         c.commit()
+        return changed.rowcount == 1
 
 
 def mark_subscription_run(sub_id: str, report_id: str) -> None:
@@ -731,15 +776,3 @@ def save_report_feedback(
             (report_id, edited_blocks, total_blocks, json.dumps(data), _now()),
         )
         c.commit()
-
-
-def get_report_feedback(report_id: str) -> Optional[Dict[str, Any]]:
-    c = _connect()
-    row = c.execute(
-        "SELECT * FROM report_feedback WHERE report_id=?", (report_id,)
-    ).fetchone()
-    if not row:
-        return None
-    d = dict(row)
-    d["data"] = json.loads(d.get("data") or "{}")
-    return d

@@ -39,12 +39,13 @@ async def main() -> int:
 
     settings = get_settings()
     if not settings.llm_configured:
-        print("FAIL  GEMINI_API_KEY is not set — copy backend/.env.example to backend/.env")
+        print(f"FAIL  {settings.llm_configuration_error}")
         return 1
 
     print(f"query: {args.query}")
     print(f"mode:  {args.mode}")
-    print(f"model: {settings.gemini_model_core} / {settings.gemini_model_fast}")
+    print(f"provider: {settings.llm_provider}")
+    print(f"model: {settings.llm_model_core} / {settings.llm_model_fast}")
     print()
 
     t0 = time.monotonic()

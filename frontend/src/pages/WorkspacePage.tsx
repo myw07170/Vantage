@@ -47,6 +47,7 @@ export default function WorkspacePage() {
     finished,
     error,
     streamStatus,
+    query: savedQuery,
   } = useTaskStore()
   const byId = useExpertStore((s) => s.byId)
 
@@ -72,7 +73,7 @@ export default function WorkspacePage() {
         <VLogo size={32} alt="Vantage" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-aux font-medium text-ink">
-            {query || 'Competitive research'}
+            {savedQuery || query || 'Competitive research'}
           </div>
           <div className="truncate text-tag text-ink-3">Task {taskId}</div>
         </div>

@@ -1,24 +1,23 @@
-"""Thread-safe token-bucket rate limiting for Gemini's free tier.
+"""Thread-safe local request and token budgets for LLM calls.
 
 Why this module exists
 ----------------------
 The pipeline fans out up to 12 concurrent section writes (see orchestrator's
 parallel write stage), and every LLM call runs inside an `asyncio.to_thread`
-worker. Gemini's free tier allows roughly 10 requests/minute on Flash. Firing
-the fan-out unthrottled means almost every request 429s, and blind retry storms
-make it worse.
+worker. Local budgets pace this fan-out to fit the selected provider account.
 
 So the limiter must be:
 
 * **thread-safe, not asyncio-safe** — callers are OS threads, not coroutines,
   so this uses `threading.Lock`/`Condition` rather than asyncio primitives.
-* **multi-dimensional** — Gemini enforces requests/minute, requests/day and
-  tokens/minute independently. Exceeding any one of them 429s.
+* **multi-dimensional** — requests/minute, requests/day and tokens/minute
+  can be capped independently; zero disables a cap.
 * **fair** — waiters wake in arrival order, so a burst of section writes does
   not starve the intake call that unblocks the next stage.
 
 `acquire()` blocks until every bucket has capacity, then records the spend.
-Daily counters reset at midnight Pacific, matching Google's quota reset.
+Daily counters reset at midnight UTC-08:00. These process-local budgets are
+not a provider's reported account quota.
 """
 from __future__ import annotations
 
@@ -29,7 +28,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
-# Google resets free-tier daily quotas at midnight Pacific.
+# Preserve the local daily accounting boundary (fixed UTC-08:00).
 _PACIFIC = _dt.timezone(_dt.timedelta(hours=-8))
 
 
@@ -43,7 +42,7 @@ class _Window:
 
     Timestamps of recent spends are kept so capacity frees up continuously
     instead of in a sawtooth at each minute boundary — which matters because
-    Gemini itself measures over a rolling window.
+    model APIs commonly measure over a rolling window.
     """
 
     limit: int
@@ -125,7 +124,7 @@ class RateLimiter:
         self._sem: Optional[threading.Semaphore] = None
         self._max_concurrency = 0
         self._ticket = 0  # monotonic arrival counter, for FIFO fairness
-        self._serving = 0
+        self._waiting: list[int] = []
 
     # ---- configuration ------------------------------------------------------
 
@@ -158,6 +157,7 @@ class RateLimiter:
         calling these directly.
         """
         sem = self._sem
+        my_turn = None
         if sem is not None:
             sem.acquire()
         try:
@@ -167,6 +167,7 @@ class RateLimiter:
                     return
                 self._ticket += 1
                 my_turn = self._ticket
+                self._waiting.append(my_turn)
                 while True:
                     now = time.monotonic()
                     bucket._roll_day()
@@ -174,9 +175,9 @@ class RateLimiter:
                         raise DailyQuotaExhausted(
                             f"Daily request quota for '{tier}' is exhausted "
                             f"({bucket.rpd_used}/{bucket.rpd_limit}). "
-                            "It resets at midnight US/Pacific."
+                            "The local budget resets at midnight UTC-08:00."
                         )
-                    ahead = my_turn > self._serving + 1
+                    ahead = self._waiting[0] != my_turn
                     fits = bucket.rpm.has_room(now, 1) and bucket.tpm.has_room(
                         now, max(0, est_tokens)
                     )
@@ -185,7 +186,8 @@ class RateLimiter:
                         if est_tokens > 0:
                             bucket.tpm.spend(now, est_tokens)
                         bucket.rpd_used += 1
-                        self._serving = my_turn
+                        self._waiting.pop(0)
+                        self._cond.notify_all()
                         return
                     wait = min(
                         bucket.rpm.retry_after(now, 1),
@@ -193,6 +195,12 @@ class RateLimiter:
                     )
                     self._cond.wait(timeout=max(0.05, min(wait, 5.0)))
         except BaseException:
+            # A failed daily-budget acquisition must not leave a FIFO hole
+            # that blocks later callers on another, still-available model.
+            with self._cond:
+                if my_turn in self._waiting:
+                    self._waiting.remove(my_turn)
+                self._cond.notify_all()
             # Never leak the concurrency slot if we raise before returning.
             if sem is not None:
                 sem.release()
@@ -267,7 +275,7 @@ limiter = RateLimiter()
 def backoff_delay(attempt: int, retry_after: Optional[float] = None) -> float:
     """Delay before retry `attempt` (0-based).
 
-    Honors the server's own `retryDelay` when Gemini sends one, otherwise
+    Honors the server's own Retry-After header when present, otherwise
     exponential backoff with jitter to avoid a thundering herd after a burst.
     """
     if retry_after is not None and retry_after > 0:

@@ -11,8 +11,6 @@ dependencies = [
     "pydantic>=2.10.4",
     "pydantic-settings>=2.7.1",
     "python-dotenv>=1.0.1",
-    # LLM — Google Gemini
-    "google-genai>=1.0.0",
     # Collection / extraction
     "httpx>=0.28.1",
     "beautifulsoup4>=4.12.3",

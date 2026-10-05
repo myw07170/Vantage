@@ -10,15 +10,15 @@ Operating principles:
 * **Real user voice.** Reddit and Hacker News are read through their APIs;
   review sites through site-restricted search. Every quote keeps its link.
 * **Nothing fabricated.** If a search returns nothing, the report says so.
-  There is no demo data, no placeholder statistics, no invented comments.
+  Mock uses marked source notes; it never invents evidence, statistics or comments.
 * **Real persistence.** Tasks, reports, evidence, expert workload and traces
   all land in SQLite.
 * **The four iron rules** run throughout: no claim without evidence,
   cross-validation for high confidence, a rework loop that actually fires, and
   full observability of every model call.
 
-Model routing: the Gemini free tier offers Flash and Flash-Lite only, so the
-core and auxiliary tiers share one model and light work goes to Flash-Lite.
+Model routing: core and auxiliary work share the configured core model;
+light work uses the configured fast model for the selected provider.
 Sections are written in parallel; the rate limiter paces the fan-out.
 """
 from __future__ import annotations
@@ -39,12 +39,11 @@ from app.core import trace
 from app.core.audit import decide_rework, evaluate_quality, llm_quality_review
 from app.core.config import get_settings
 from app.core.credibility import freshness_days, score_evidence
-from app.core.fetcher import domain_of, fetch_page
-from app.core.llm import TOKEN_USAGE, chat, chat_json
+from app.core.fetcher import UnsafeURL, domain_of, fetch_page, public_addresses
+from app.core.llm import TOKEN_USAGE, LLMNotConfigured, chat, chat_json, raise_if_fatal
 from app.core.metrics import compute_report_metrics, merge_quality_into_metrics
 from app.core.models import Envelope, Evidence, SourceType, make_claim
 from app.core.personas import (
-    CHIEF_ANALYST,
     DIRECTOR,
     MAX_L1,
     MAX_L2,
@@ -139,29 +138,39 @@ MODE_CONFIG = {
 def _model(tier: str) -> str:
     """tier: 'core' | 'aux' | 'fast' -> a model name.
 
-    Gemini's free tier has no Pro model, so core and aux both resolve to Flash;
-    the three tier names are kept because call sites express intent with them.
+    Core and aux share a model; the tier names express the call site's intent.
     """
     if tier == "fast":
-        return _settings.gemini_model_fast
-    return _settings.gemini_model_core
+        return _settings.llm_model_fast
+    return _settings.llm_model_core
 
 
 # ── Task creation / clarification ─────────────────────────────────────────────
-def create_task(query: str, mode: str = "deep") -> Dict[str, Any]:
+def create_task(query: str, mode: str = "deep", subscription_id: str = "") -> Dict[str, Any]:
+    query = query.strip()
+    if not query or mode not in MODE_CONFIG:
+        raise ValueError("A non-empty query and a valid research mode are required.")
+    if not _settings.llm_configured:
+        raise LLMNotConfigured(_settings.llm_configuration_error)
+    if subscription_id and not db.get_subscription(subscription_id):
+        raise ValueError("Subscription not found.")
     task_id = _sid("t")
-    questions = _clarify_questions(query)
-    db.save_task(task_id, query, {"_mode": mode})
+    scope = _discover_scope(query)
+    questions = _clarify_questions(query, scope)
+    db.save_task(task_id, query, {"_mode": mode, "_scope": scope,
+                               "_questions": questions, "_subscription_id": subscription_id})
     return {"taskId": task_id, "needClarify": True, "clarifyQuestions": questions}
 
 
 def submit_clarify(task_id: str, answers: Dict[str, Any]) -> Dict[str, Any]:
-    task = db.get_task(task_id) or {}
+    task = db.get_task(task_id)
+    if not task:
+        return {"ok": False, "message": "Task not found."}
     prev = task.get("clarifications", {}) or {}
-    merged = {**answers}
-    if "_mode" in prev and "_mode" not in merged:
-        merged["_mode"] = prev["_mode"]
-    db.update_task_clarify(task_id, merged)
+    merged = {**{k: v for k, v in answers.items() if not k.startswith("_")},
+              **{k: v for k, v in prev.items() if k.startswith("_")}}
+    if not db.update_task_clarify(task_id, merged):
+        return {"ok": False, "message": "Only an unstarted task can be clarified."}
     return {"ok": True}
 
 
@@ -223,6 +232,9 @@ def refine_section(
             temperature=0.7,
             model=_model("core"),
             purpose=f"Deepen section from annotations: {target.get('title','')}",
+            task_kind="refine_section",
+            mock_context={"title": target.get("title", ""), "evidence": evidence[:24],
+                          "annotations": annotations},
         )
         if isinstance(data, dict) and data.get("paragraphs"):
             paras = [str(p).strip() for p in data["paragraphs"] if str(p).strip()]
@@ -252,21 +264,28 @@ def refine_section(
                         src.append(eid)
                 target["source_evidence_ids"] = src
                 target["refined"] = True
+                if _settings.is_mock:
+                    # Refining a historical real report with mock also makes
+                    # the delivered report partially simulated.
+                    rep["llm_provider"] = "mock"
+                    rep["is_mock"] = True
+                    if not rep.get("subtitle", "").startswith("[MOCK]"):
+                        rep["subtitle"] = "[MOCK] 模拟报告 · " + rep.get("subtitle", "")
                 db.save_report(rep, task_id="")
-                return {"ok": True, "section": target}
+                return {"ok": True, "section": target, "report": rep}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "message": str(e)}
     return {"ok": False, "message": "refine failed"}
 
 
-def _clarify_questions(query: str) -> List[Dict[str, Any]]:
+def _clarify_questions(query: str, scope: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Scope discovery first, then the clarification questionnaire.
 
     Discovering candidate competitors up front and letting the user tick them
     is what prevents the common failure where a request to "research X" returns
     a report about X alone with no comparison at all.
     """
-    scope = _discover_scope(query)
+    scope = scope if scope is not None else _discover_scope(query)
     subject = scope.get("subject") or query
     domain = scope.get("domain") or ""
     competitors = scope.get("competitors") or []
@@ -399,6 +418,8 @@ def _discover_scope(query: str) -> Dict[str, Any]:
                 temperature=0.3,
                 model=_model("aux"),
                 purpose="Scope discovery: subject, category, competitors",
+                task_kind="scope",
+                mock_context={"query": query, "brands": _regex_brands(query)},
             )
             if isinstance(data, dict) and (data.get("subject") or data.get("competitors")):
                 subject = str(data.get("subject") or "").strip()
@@ -411,7 +432,8 @@ def _discover_scope(query: str) -> Dict[str, Any]:
                 seen = set()
                 comps = [c for c in comps if not (c in seen or seen.add(c))]
                 return {"subject": subject, "domain": domain, "competitors": comps[:12]}
-        except Exception:
+        except Exception as exc:
+            raise_if_fatal(exc)
             pass
     return {"subject": "", "domain": "", "competitors": []}
 
@@ -427,6 +449,9 @@ def _plan_research(
     if isinstance(user_brands, str):
         user_brands = [user_brands]
     user_brands = [str(b).strip() for b in user_brands if str(b).strip()]
+    # Selecting rivals must not replace the subject the questionnaire scoped.
+    subject = str((clar.get("_scope") or {}).get("subject") or "").strip()
+    requested = list(dict.fromkeys(([subject] if subject else []) + (user_brands or _regex_brands(query))))
     try:
         data = chat_json(
             [
@@ -466,6 +491,9 @@ def _plan_research(
             temperature=0.3,
             model=_model("fast"),
             purpose="Plan research: competitors, dimensions, search angles",
+            task_kind="plan",
+            mock_context={"query": query, "brands": requested,
+                          "focus": clar.get("focus"), "max_angles": max_angles},
         )
         if isinstance(data, dict) and (data.get("brands") or user_brands):
             llm_brands = [
@@ -481,7 +509,7 @@ def _plan_research(
                           "landscape", " and ", "/", "market")
             )
             merged: List[str] = []
-            for b in user_brands + ([subject] if subject_ok else []) + llm_brands:
+            for b in requested + ([subject] if subject_ok else []) + llm_brands:
                 b = b.strip()
                 if b and b not in merged:
                     merged.append(b)
@@ -498,9 +526,10 @@ def _plan_research(
                     "angles": angles or _DEFAULT_ANGLES,
                     "category": category,
                 }
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         pass
-    fallback_brands = user_brands or _regex_brands(query)
+    fallback_brands = requested
     return {
         "brands": fallback_brands[:6],
         "focus": list(_DEFAULT_FOCUS),
@@ -607,10 +636,13 @@ def _dispatch_experts(query: str, brands: List[str], focus: List[str]) -> Dict[s
             temperature=0.4,
             model=_model("fast"),
             purpose="Assemble the expert team",
+            task_kind="dispatch",
+            mock_context={"candidates": roster, "scores": scores},
         )
         if isinstance(data, dict) and isinstance(data.get("members"), list):
             members = [m for m in data["members"] if isinstance(m, dict)]
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         pass
 
     # `normalize_team` fills an empty list from the shortlist, so a failed call
@@ -789,6 +821,8 @@ def _collect_brand(
             fallback_snippet=r.get("snippet", ""),
             prefetched_text=r.get("content") or "",
         )
+        if page.get("blocked"):
+            continue
         ok = page.get("ok")
         text = (page.get("text") or r.get("snippet", "")).strip()
         if not text:
@@ -872,6 +906,11 @@ def _collect_brand_voices(
     ) -> None:
         nonlocal dropped
         if not url or not text or url in seen_urls:
+            return
+        try:
+            public_addresses(url)
+        except (UnsafeURL, ValueError):
+            dropped += 1
             return
         if not _sentiment_relevant(brand, cat_keywords, title, text):
             dropped += 1
@@ -980,9 +1019,14 @@ def _collect_brand_voices(
 
 # ── Main pipeline ─────────────────────────────────────────────────────────────
 async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str, Any]]:
-    task = db.get_task(task_id) or {"query": "Competitive analysis", "clarifications": {}}
+    task = db.get_task(task_id)
+    if not task:
+        raise ValueError("Task not found.")
+    if not _settings.llm_configured:
+        raise LLMNotConfigured(_settings.llm_configuration_error)
     query = task.get("query", "Competitive analysis")
     clar = task.get("clarifications", {}) or {}
+    sub_id = clar.get("_subscription_id", "") or sub_id
     mode = clar.get("_mode", "deep")
     if mode not in MODE_CONFIG:
         mode = "deep"
@@ -1548,26 +1592,32 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     tasks = [asyncio.create_task(_write_one(sid)) for sid in section_ids]
     done_count = 0
     total = len(tasks)
-    for coro in asyncio.as_completed(tasks):
-        sid, st = await coro
-        sections_text[sid] = st
-        done_count += 1
-        for e in _drain_trace():
-            yield e
-        title = dict(SECTION_PLAN).get(sid, sid)
-        yield _ev(
-            "thought",
-            {
-                "id": _sid("th"), "kind": "finding", "expert": section_authors[sid],
-                "text": f"Section {done_count}/{total} complete: {title}.",
-                "ts": _now(),
-            },
-        )
-        yield _ev(
-            "progress",
-            prog(70 + int(12 * done_count / total), "write", len(evidences),
-                 queued=total - done_count),
-        )
+    try:
+        for coro in asyncio.as_completed(tasks):
+            sid, st = await coro
+            sections_text[sid] = st
+            done_count += 1
+            for e in _drain_trace():
+                yield e
+            title = dict(SECTION_PLAN).get(sid, sid)
+            yield _ev(
+                "thought",
+                {
+                    "id": _sid("th"), "kind": "finding", "expert": section_authors[sid],
+                    "text": f"Section {done_count}/{total} complete: {title}.",
+                    "ts": _now(),
+                },
+            )
+            yield _ev(
+                "progress",
+                prog(70 + int(12 * done_count / total), "write", len(evidences),
+                     queued=total - done_count),
+            )
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     sentiment_text: Dict[str, Any] = {"paragraphs": [], "key_takeaway": "", "highlights": []}
     # The listener who gathered the user voice also writes it up, and owns any
@@ -1800,6 +1850,10 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     yield _ev("node_update", {"node": "verify", "status": "done"})
     yield _ev("progress", prog(94, "verify", len(evidences)))
 
+    if all(any("This section could not be generated" in p for p in st.get("paragraphs", []))
+           for st in sections_text.values()):
+        raise RuntimeError("All report sections failed to generate. Check the LLM provider and create a new task.")
+
     # ---- 8. done ----
     yield _ev("node_update", {"node": "done", "status": "working", "expert": dispatch["lead"]})
     yield _ev("progress", prog(95, "done", len(evidences)))
@@ -1828,6 +1882,10 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         "rework_rounds": rework_rounds_done, "issues_resolved": issues_resolved,
     }
     report["verify_review"] = verify_result
+    report["llm_provider"] = _settings.llm_provider
+    report["is_mock"] = _settings.is_mock
+    if _settings.is_mock:
+        report["subtitle"] = "[MOCK] 模拟报告 · " + report.get("subtitle", "")
     db.save_report(report, task_id=task_id)
     db.save_traces(task_id, report["id"], trace_spans)
     db.mark_task_done(task_id, report["id"])
@@ -1948,6 +2006,8 @@ def _analyze(
             temperature=0.4,
             model=_model("core"),
             purpose="Cross-validate evidence into claims and comparison data",
+            task_kind="analyze",
+            mock_context={"evidence": [e.to_dict() for e in evidences], "authors": authors},
         )
         if isinstance(data, dict) and data.get("claims"):
             claims = []
@@ -1977,7 +2037,8 @@ def _analyze(
                     if isinstance(data.get("trends"), dict)
                     else {},
                 }
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         pass
     return fallback
 
@@ -2027,12 +2088,15 @@ def _analyze_structured(
             temperature=0.3,
             model=_model("core"),
             purpose="Structured competitive knowledge (features / pricing / personas)",
+            task_kind="structured",
+            mock_context={"brands": brands, "evidence": [e.to_dict() for e in evidences]},
         )
         if isinstance(data, dict):
             out["feature_tree"] = coerce_feature_tree(data, valid_eids)
             out["pricing_model"] = coerce_pricing_model(data, valid_eids)
             out["user_persona"] = coerce_user_persona(data, valid_eids)
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         pass
     return out
 
@@ -2336,6 +2400,9 @@ def _write_single_section(
                 if fix_directive
                 else f"Write section: {title}"
             ),
+            task_kind="write_section",
+            mock_context={"title": title, "evidence": [e.to_dict() for e in evidences],
+                          "min_paragraphs": min_paragraphs, "fix_directive": fix_directive},
         )
         if isinstance(data, dict):
             paras = data.get("paragraphs")
@@ -2354,7 +2421,8 @@ def _write_single_section(
             kt = str(data.get("key_takeaway", "")).strip()
             if paras:
                 return {"paragraphs": paras, "key_takeaway": kt, "highlights": hl}
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         pass
 
     # One retry with a plainer prompt before giving up on the section.
@@ -2384,11 +2452,15 @@ def _write_single_section(
             temperature=0.7,
             model=model,
             purpose=f"Retry writing section: {title}",
+            task_kind="write_section",
+            mock_context={"title": title, "evidence": [e.to_dict() for e in evidences],
+                          "min_paragraphs": min_paragraphs, "fix_directive": fix_directive},
         )
         paras = [p.strip() for p in retry.split("\n") if len(p.strip()) > 30]
         if paras:
             return {"paragraphs": paras, "key_takeaway": "", "highlights": []}
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         pass
     return {
         "paragraphs": [
@@ -2481,6 +2553,8 @@ def _write_sentiment_narrative(
             temperature=0.6,
             model=model,
             purpose="Write section: user sentiment and opinion camps",
+            task_kind="sentiment_narrative",
+            mock_context={"sentiment": sentiment},
         )
         if isinstance(data, dict):
             paras = data.get("paragraphs")
@@ -2499,7 +2573,8 @@ def _write_sentiment_narrative(
             kt = str(data.get("key_takeaway", "")).strip()
             if paras:
                 return {"paragraphs": paras, "key_takeaway": kt, "highlights": hl}
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         pass
     return {"paragraphs": [], "key_takeaway": "", "highlights": []}
 

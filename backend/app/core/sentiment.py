@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from app.core.llm import chat_json
+from app.core.llm import chat_json, raise_if_fatal
 from app.core.platforms import PLATFORM_LABEL, PLATFORM_ORDER
 
 # Keyword fallback for when the LLM is unavailable. Deliberately short and
@@ -92,8 +92,11 @@ def _llm_classify(brand: str, comments: List[Dict[str, Any]], model: str = None)
             max_tokens=1500,
             model=model,
             purpose="Classify sentiment of collected user comments",
+            task_kind="sentiment",
+            mock_context={"comments": comments},
         )
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         # Any model failure — bad key, quota, timeout — falls back to the
         # keyword rules rather than aborting a run that already has real
         # evidence in hand.
@@ -271,8 +274,11 @@ def _extract_highlights(
             max_tokens=800,
             model=model,
             purpose="Extract representative quotes from user comments",
+            task_kind="quotes",
+            mock_context={"comments": pool},
         )
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         return []
     if isinstance(data, dict):
         for v in data.values():

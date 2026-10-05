@@ -1,12 +1,9 @@
-"""Global settings, read from environment / .env. Secrets are never hardcoded.
-
-Every quota number is configurable because Gemini's free-tier limits change:
-read the live values from AI Studio and override them in `.env` rather than
-editing code.
-"""
+"""Global settings, read from environment / backend/.env."""
 import os
 from functools import lru_cache
+from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve backend/.env by absolute path so the working directory the server was
@@ -23,34 +20,28 @@ class Settings(BaseSettings):
         env_file=_ENV_FILE, env_file_encoding="utf-8", extra="ignore"
     )
 
-    # ---- LLM: Google Gemini -------------------------------------------------
-    gemini_api_key: str = ""
-    # The free tier offers Flash and Flash-Lite only; Pro models are paid-only,
-    # so the pipeline runs on two tiers rather than three.
-    #   core — report sections, cross-analysis, audit review (quality-critical)
-    #   fast — intake, clarification, expert dispatch, sentiment classification
-    gemini_model_core: str = "gemini-3.5-flash"
-    gemini_model_fast: str = "gemini-3.5-flash-lite"
+    # core/aux: writing, analysis, review; fast: planning, dispatch, sentiment.
+    llm_provider: Literal["mock", "qwen", "openai"] = "mock"
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model_core: str = "gpt-4.1-mini"
+    openai_model_fast: str = "gpt-4.1-mini"
+    qwen_api_key: str = ""
+    dashscope_api_key: str = ""
+    qwen_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    qwen_model_core: str = "qwen-plus"
+    qwen_model_fast: str = "qwen-plus"
 
-    # Free-tier quotas, per model tier. Defaults are conservative; confirm the
-    # real numbers for your project at https://aistudio.google.com/rate-limit
-    gemini_rpm_core: int = 10
-    gemini_rpd_core: int = 1500
-    gemini_tpm_core: int = 250_000
-    gemini_rpm_fast: int = 15
-    gemini_rpd_fast: int = 1000
-    gemini_tpm_fast: int = 250_000
-
-    # Ceiling on simultaneously in-flight LLM calls. The pipeline fans out up to
-    # 12 concurrent section writes; without this the burst trips 429 instantly.
-    gemini_max_concurrency: int = 4
-
-    # Thinking budget in tokens. The research pipeline wants fast, stable output
-    # over deep deliberation; 0 disables thinking where the model allows it.
-    gemini_thinking_budget: int = 0
-
-    llm_timeout: float = 180.0
-    llm_max_retries: int = 3
+    # Local budgets, not provider-reported quota. 0 disables the cap.
+    llm_rpm_core: int = Field(default=0, ge=0)
+    llm_rpd_core: int = Field(default=0, ge=0)
+    llm_tpm_core: int = Field(default=0, ge=0)
+    llm_rpm_fast: int = Field(default=0, ge=0)
+    llm_rpd_fast: int = Field(default=0, ge=0)
+    llm_tpm_fast: int = Field(default=0, ge=0)
+    llm_max_concurrency: int = Field(default=4, ge=1)
+    llm_timeout: float = Field(default=180.0, gt=0)
+    llm_max_retries: int = Field(default=3, ge=0)
 
     # ---- Search -------------------------------------------------------------
     # Ordered failover chain. Each name must match a provider in core/search/.
@@ -70,7 +61,34 @@ class Settings(BaseSettings):
 
     @property
     def llm_configured(self) -> bool:
-        return bool(self.gemini_api_key)
+        return self.is_mock or bool(self.llm_api_key.strip())
+
+    @property
+    def is_mock(self) -> bool:
+        return self.llm_provider == "mock"
+
+    @property
+    def llm_api_key(self) -> str:
+        if self.llm_provider == "qwen":
+            return self.qwen_api_key.strip() or self.dashscope_api_key.strip()
+        return self.openai_api_key.strip() if self.llm_provider == "openai" else ""
+
+    @property
+    def llm_base_url(self) -> str:
+        return self.qwen_base_url if self.llm_provider == "qwen" else self.openai_base_url
+
+    @property
+    def llm_model_core(self) -> str:
+        return "mock-core" if self.is_mock else getattr(self, f"{self.llm_provider}_model_core")
+
+    @property
+    def llm_model_fast(self) -> str:
+        return "mock-fast" if self.is_mock else getattr(self, f"{self.llm_provider}_model_fast")
+
+    @property
+    def llm_configuration_error(self) -> str:
+        key = "QWEN_API_KEY (or DASHSCOPE_API_KEY)" if self.llm_provider == "qwen" else "OPENAI_API_KEY"
+        return f"{key} is not set for LLM_PROVIDER={self.llm_provider}. Configure backend/.env."
 
     @property
     def search_provider_chain(self) -> list[str]:

@@ -15,12 +15,12 @@ from __future__ import annotations
 import re
 import threading
 import time
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 from app.core import trace
 from app.core.config import get_settings
 from app.core.search import ddg, exa, tavily
-from app.core.search.base import Freshness, SearchUnavailable, now_iso
+from app.core.search.base import Freshness, SearchUnavailable
 
 __all__ = ["search", "multi_search", "Freshness", "SearchUnavailable", "provider_status"]
 

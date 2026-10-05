@@ -305,8 +305,6 @@ PLATFORM_SITES: Dict[str, str] = {k: p.domain for k, p in PLATFORMS.items()}
 PLATFORM_SOURCE_TYPE: Dict[str, str] = {k: p.source_type for k, p in PLATFORMS.items()}
 
 
-def get_platform(key: str) -> Optional[Platform]:
-    return PLATFORMS.get(key)
 
 
 def api_platforms() -> List[Platform]:

@@ -1,4 +1,4 @@
-import type { ReactNode, ButtonHTMLAttributes, HTMLAttributes } from 'react'
+import type { ReactNode, HTMLAttributes } from 'react'
 import {
   motion,
   AnimatePresence,
@@ -24,64 +24,6 @@ export function VCard({
     >
       {children}
     </div>
-  )
-}
-
-/* ── Button ──────────────────────────────────────────────────────────────── */
-export function VButton({
-  children,
-  variant = 'primary',
-  className = '',
-  ...p
-}: {
-  children: ReactNode
-  variant?: 'primary' | 'ghost' | 'soft'
-} & ButtonHTMLAttributes<HTMLButtonElement>) {
-  const base =
-    'inline-flex items-center justify-center gap-2 px-5 h-11 rounded-btn font-medium text-sm transition-all duration-200 ease-vantage active:scale-95 disabled:opacity-50 disabled:pointer-events-none'
-  const styles =
-    variant === 'primary'
-      ? 'bg-primary-deep text-white hover:bg-primary-deeper shadow-card hover:shadow-float'
-      : variant === 'soft'
-        ? 'bg-primary-tint text-primary-deep hover:bg-primary-soft/40'
-        : 'bg-transparent text-ink-2 hover:bg-primary-tint hover:text-primary-deep'
-  return (
-    <button className={`${base} ${styles} ${className}`} {...p}>
-      {children}
-    </button>
-  )
-}
-
-/* ── Chip ────────────────────────────────────────────────────────────────── */
-// Light tone behind, `-deep` tone on top. A chip set in its own base colour
-// measures around 2:1 against its pill — unreadable, on the elements carrying
-// the product's central signal.
-const tone = {
-  high: 'bg-ok/15 text-ok-deep',
-  medium: 'bg-warn/15 text-warn-deep',
-  low: 'bg-risk/15 text-risk-deep',
-  unverified: 'bg-paper text-ink-2',
-  neutral: 'bg-primary-tint text-primary-deep',
-} as const
-
-export function VChip({
-  label,
-  level = 'neutral',
-  icon,
-  className = '',
-}: {
-  label: ReactNode
-  level?: keyof typeof tone
-  icon?: ReactNode
-  className?: string
-}) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-3 h-7 rounded-chip text-xs font-medium ${tone[level]} ${className}`}
-    >
-      {icon}
-      {label}
-    </span>
   )
 }
 

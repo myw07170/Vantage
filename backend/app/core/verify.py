@@ -490,7 +490,7 @@ def llm_report_review(
     `persona` is the quality officer's preamble, built by the caller so this
     module stays independent of the roster.
     """
-    from app.core.llm import chat_json
+    from app.core.llm import chat_json, raise_if_fatal
 
     claim_lines = (
         "\n".join(
@@ -585,6 +585,8 @@ def llm_report_review(
             temperature=0.2,
             model=model,
             purpose="Verify the written report: citations, consistency, support",
+            task_kind="report_review",
+            mock_context={"rule_review": fallback},
         )
         if isinstance(data, dict) and (data.get("scores") or data.get("findings")):
             scores = {str(k): _clamp(v) for k, v in (data.get("scores") or {}).items()}
@@ -594,7 +596,8 @@ def llm_report_review(
                 "review": str(data.get("review") or fallback["review"]),
                 "findings": _coerce_findings(data.get("findings"), sections),
             }
-    except Exception:
+    except Exception as exc:
+        raise_if_fatal(exc)
         pass
     return fallback
 

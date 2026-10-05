@@ -35,3 +35,5 @@ scripts/vantage.ps1
 
 Vantage.code-workspace
 CLAUDE.md
+# Test runner cache
+.pytest_cache/
