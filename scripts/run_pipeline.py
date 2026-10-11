@@ -1,216 +1,67 @@
-"""Run the full research pipeline headlessly, with no frontend.
-
-This is the Phase 6 gate: it validates collection, analysis, the rework loop,
-writing and assembly in one shot, and asserts the invariants the product's
-credibility rests on.
-
-    uv run python scripts/run_pipeline.py --query "Notion vs Obsidian" --mode quick
-    uv run python scripts/run_pipeline.py --query "..." --mode deep --verbose
-
-Writes the assembled report JSON next to the database for inspection.
-"""
+"""Run one confirmed comparison headlessly; real model calls require --allow-live."""
 from __future__ import annotations
-
 import argparse
 import asyncio
 import json
-import os
-import re
+import hashlib
 import sys
-import time
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
-
-from app.core import db  # noqa: E402
-from app.core.config import get_settings  # noqa: E402
-from app.core.orchestrator import create_task, run_pipeline, submit_clarify  # noqa: E402
-
-# Event types that are noisy in a terminal unless --verbose.
-_QUIET = {"evidence", "trace", "image", "progress"}
-
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+from app.core import db
+from app.core.config import get_settings
+from app.core.models import DEFAULT_TOPICS, ResearchScope, all_items
+from app.core.tasks import TaskRunner
 
 async def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--query", default="Notion vs Obsidian vs Craft for research teams")
-    ap.add_argument("--mode", default="quick", choices=["quick", "deep", "expert"])
-    ap.add_argument("--verbose", action="store_true", help="print every event")
-    ap.add_argument("--out", default="", help="where to write the report JSON")
-    args = ap.parse_args()
-
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--scope", type=Path, help="JSON ResearchScope with explicitly confirmed product identities.")
+    parser.add_argument("--query", default="Notion vs Obsidian for a small research team")
+    parser.add_argument("--allow-live", action="store_true", help="Allow real model calls using the configured provider.")
+    parser.add_argument("--out", type=Path, default=Path(".run-logs/comparison.json"))
+    args = parser.parse_args()
     settings = get_settings()
+    config_path = Path(__file__).resolve().parents[1] / "backend" / ".env"
+    config_digest = hashlib.sha256(config_path.read_bytes()).digest() if config_path.exists() else None
+    if not settings.is_mock and not args.allow_live:
+        parser.error("Real inference requires --allow-live; configure LLM_PROVIDER=mock for simulated inference.")
     if not settings.llm_configured:
-        print(f"FAIL  {settings.llm_configuration_error}")
-        return 1
-
-    print(f"query: {args.query}")
-    print(f"mode:  {args.mode}")
-    print(f"provider: {settings.llm_provider}")
-    print(f"model: {settings.llm_model_core} / {settings.llm_model_fast}")
-    print()
-
-    t0 = time.monotonic()
-    task = create_task(args.query, mode=args.mode)
-    task_id = task["taskId"]
-    print(f"task {task_id} created, {len(task.get('clarifyQuestions') or [])} clarify questions")
-    for q in task.get("clarifyQuestions") or []:
-        print(f"  [{q['type']:6s}] {q['question']}")
-        if q.get("options"):
-            print(f"           options: {', '.join(str(o) for o in q['options'][:6])}")
-    print()
-
-    # Answer the questionnaire the way a user reasonably would.
-    competitors = next(
-        (q.get("options", []) for q in task.get("clarifyQuestions") or []
-         if q["id"] == "competitors"),
-        [],
-    )
-    submit_clarify(
-        task_id,
-        {
-            "competitors": competitors[:3],
-            "focus": ["Feature comparison", "Pricing strategy", "User sentiment"],
-            "perspective": "Product manager",
-            "market": "United States",
-            "user": "SMB teams",
-            "freshness": "Within the last year",
-        },
-    )
-
-    counts: dict[str, int] = {}
-    report_id = ""
-    error = ""
-    async for ev in run_pipeline(task_id):
-        etype, data = ev["type"], ev["data"]
-        counts[etype] = counts.get(etype, 0) + 1
-        if etype == "done":
-            report_id = data.get("reportId", "")
-        if etype == "error":
-            error = data.get("message", "")
-        if args.verbose or etype not in _QUIET:
-            if etype == "thought":
-                print(f"  [{data.get('kind','')}] {data.get('text','')}")
-            elif etype == "node_update" and data.get("node"):
-                print(f"  <{data['node']}> {data.get('status','')}")
-            elif etype == "message":
-                print(f"  ({data.get('kind','')}) {data.get('text') or data.get('reason') or ''}")
-            elif etype == "progress":
-                print(f"  ... {data.get('percent')}% {data.get('stage')} "
-                      f"({data.get('evidence_count')} evidence, {data.get('token_used')} tokens)")
-            elif etype in ("error", "report_ready", "done"):
-                print(f"  {etype}: {data}")
-
-    elapsed = time.monotonic() - t0
-    print()
-    print(f"finished in {elapsed:.1f}s")
-    print("events:", dict(sorted(counts.items())))
-
-    if error:
-        print(f"\nFAIL  pipeline reported an error: {error}")
-        return 1
-    if not report_id:
-        print("\nFAIL  pipeline produced no report")
-        return 1
-
-    rep = db.get_report(report_id)
-    if not rep:
-        print(f"\nFAIL  report {report_id} was not persisted")
-        return 1
-
-    out_path = args.out or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        f"report-{report_id}.json",
-    )
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(rep, f, indent=2)
-
-    # ---- invariants -----------------------------------------------------
-    evidence = rep.get("evidence", [])
-    claims = rep.get("claims", [])
-    sections = rep.get("sections", [])
-    domains_by_brand: dict[str, set] = {}
-    for e in evidence:
-        domains_by_brand.setdefault(e.get("brand", ""), set()).add(e.get("domain", ""))
-
-    checks = []
-    checks.append(("at least 8 pieces of evidence", len(evidence) >= 8, len(evidence)))
-    checks.append(("at least 3 claims", len(claims) >= 3, len(claims)))
-    checks.append(
-        (
-            "every claim carries evidence ids",
-            all(c.get("evidence_ids") for c in claims),
-            sum(1 for c in claims if not c.get("evidence_ids")),
-        )
-    )
-    checks.append(
-        (
-            "no claim cites an unknown evidence id",
-            all(
-                set(c.get("evidence_ids", [])) <= {e["evidence_id"] for e in evidence}
-                for c in claims
-            ),
-            "",
-        )
-    )
-    checks.append(
-        (
-            "every section has body text",
-            all(s.get("paragraphs") for s in sections),
-            [s["id"] for s in sections if not s.get("paragraphs")],
-        )
-    )
-    checks.append(("trace spans recorded", len(rep.get("trace", [])) > 0, len(rep.get("trace", []))))
-
-    # The verify stage's contract: it ran, and nothing in the delivered prose
-    # cites an evidence id the report does not carry.
-    ev_ids = {e["evidence_id"] for e in evidence}
-    stray = []
-    for s in sections:
-        blocks = list(s.get("paragraphs") or []) + list(s.get("highlights") or [])
-        blocks.append(s.get("key_takeaway") or "")
-        for b in blocks:
-            for group in re.findall(r"\[([^\[\]\n]{1,240})\]", b):
-                for tok in (t.strip() for t in group.split(",")):
-                    if tok.startswith("e_") and tok not in ev_ids:
-                        stray.append((s["id"], tok))
-    vrev = rep.get("verify_review") or {}
-    checks.append(("verify stage ran", bool(vrev.get("checks")), vrev.get("verdict", "")))
-    checks.append(("no prose cites an unknown evidence id", not stray, stray[:5]))
-    checks.append(
-        (
-            "at least one brand has 2+ independent domains",
-            any(len(d - {""}) >= 2 for d in domains_by_brand.values()),
-            {b: len(d - {""}) for b, d in domains_by_brand.items()},
-        )
-    )
-
-    print()
-    failed = 0
-    for label, ok, detail in checks:
-        print(f"{'PASS' if ok else 'FAIL'}  {label}  ({detail})")
-        failed += 0 if ok else 1
-
-    m = rep.get("metrics", {})
-    print()
-    print(f"report:   {rep['title']}")
-    print(f"          {rep['subtitle']}")
-    print(f"sections: {len(sections)} — {', '.join(s['id'] for s in sections)}")
-    print(f"charts:   {len(rep.get('charts', []))}")
-    print(f"sentiment sample: {rep.get('sentiment', {}).get('sample_size', 0)}")
-    print(f"rework:   {rep.get('audit_review', {}).get('rework_rounds', 0)} round(s), "
-          f"{rep.get('audit_review', {}).get('issues_resolved', 0)} issue(s) resolved")
-    vc = vrev.get("checks", {})
-    print(f"verify:   {vrev.get('verdict','-')} — {vc.get('citations_resolved',0)} citations "
-          f"resolved, {vc.get('citations_dropped',0)} dropped, "
-          f"{vc.get('auto_fixed',0)} auto-fixed, {vc.get('open_findings',0)} open, "
-          f"{len(vrev.get('rewritten_sections') or [])} section(s) rewritten")
-    print(f"metrics:  {m.get('efficiency', {}).get('efficiency_multiple')}x efficiency, "
-          f"{m.get('coverage', {}).get('independent_sources')} independent sources")
-    print(f"saved:    {out_path}")
-
-    print()
-    print("PIPELINE PASSED" if failed == 0 else f"PIPELINE FAILED ({failed} check(s))")
-    return 1 if failed else 0
-
+        parser.error(settings.llm_configuration_error)
+    data = json.loads(args.scope.read_text(encoding="utf-8")) if args.scope else {
+        "products": [
+            {"id": "notion", "name": "Notion", "website": "https://www.notion.com", "category": "Knowledge management software", "own_product": False, "confirmed": True},
+            {"id": "obsidian", "name": "Obsidian", "website": "https://obsidian.md", "category": "Knowledge management software", "own_product": False, "confirmed": True}],
+        "topics": DEFAULT_TOPICS, "changes_days": 90, "scope_acknowledged": False, "limitations": ""}
+    scope = ResearchScope.model_validate(data)
+    db.initialize()
+    db.interrupt_running_tasks()
+    runner = TaskRunner()
+    task = db.save_task(args.query, payload={"scope": scope.model_dump()})
+    print(json.dumps({"task_id": task["task_id"], "provider": settings.llm_provider,
+                      "model": settings.llm_model_core, "token_limit": settings.research_token_limit,
+                      "time_limit_seconds": settings.research_time_limit_seconds}), flush=True)
+    runner.start(task["task_id"])
+    try:
+        async for event in runner.subscribe(task["task_id"]):
+            if event["type"] not in ("evidence", "heartbeat"):
+                print(json.dumps({"event": event["type"], **event["data"]}, ensure_ascii=True), flush=True)
+        task = db.get_task(task["task_id"])
+        version = db.get_version(task["report_id"], task["version_id"]) if task["version_id"] else None
+        content = version["content"] if version else task["checkpoint"].get("content", {})
+        summary = {
+            "task_id": task["task_id"], "status": task["status"], "report_id": task["report_id"],
+            "version_id": task["version_id"], "provider": settings.llm_provider, "model": settings.llm_model_core,
+            "evidence_count": len(content.get("evidence", [])), "item_count": len(all_items(content)),
+            "review_summary": content.get("review_summary", {}), "limitations": content.get("limitations", []),
+            "usage": task["checkpoint"].get("usage", {}), "error": task["error"],
+            "configuration_unchanged": (hashlib.sha256(config_path.read_bytes()).digest() if config_path.exists() else None) == config_digest,
+        }
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(version or task, ensure_ascii=False, indent=2), encoding="utf-8")
+        args.out.with_suffix(".summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("RESULT " + json.dumps(summary, ensure_ascii=True), flush=True)
+        return 0 if task["status"] == "done" else 1
+    finally:
+        await runner.close()
 
 if __name__ == "__main__":
     raise SystemExit(asyncio.run(main()))

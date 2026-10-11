@@ -120,5 +120,7 @@ def test_rebinding_cannot_change_validated_connection_to_private(public_dns, mon
 
 def test_blocked_source_never_becomes_evidence(offline, monkeypatch):
     monkeypatch.setattr(pipeline, "fetch_page", lambda *args, **kw: {"blocked": True, "text": "", "ok": False})
-    result = pipeline._collect_brand("Notion", ["pricing"], "collector", 6, "year", set(), "t_test")
-    assert not result["evidences"]
+    result = pipeline.collect_source({"url": "https://www.notion.com"},
+                                     {"id": "notion", "name": "Notion", "website": "https://www.notion.com"},
+                                     {"id": "features"})
+    assert result is None

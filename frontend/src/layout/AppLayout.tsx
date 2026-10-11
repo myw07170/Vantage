@@ -1,39 +1,31 @@
-import { Suspense } from 'react'
-import { Outlet } from 'react-router-dom'
-import VSidebar from './VSidebar'
-import { VToast } from './VToast'
-import { VSkeleton } from '../components/ui'
-
-/** Placeholder while a route chunk arrives. Mirrors the page rhythm — header
- *  band then content — so the layout does not jump when the real page lands. */
-export function RouteFallback() {
-  return (
-    <div className="mx-auto max-w-content px-8 py-8">
-      <VSkeleton className="h-8 w-56" />
-      <VSkeleton className="mt-3 h-4 w-96" />
-      <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {Array.from({ length: 6 }, (_, i) => (
-          <VSkeleton key={i} className="h-36 w-full rounded-card" />
-        ))}
-      </div>
-    </div>
-  )
-}
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Plus, History, PanelLeftClose, PanelLeftOpen, ArrowUpRight } from 'lucide-react'
+import { VLogo } from '../components/VLogo'
+import { useReportStore } from '../store/reportStore'
+import { useUIStore } from '../store/uiStore'
 
 export default function AppLayout() {
-  return (
-    <div className="flex h-screen w-screen overflow-hidden bg-bg">
-      <VSidebar />
-      {/* The boundary sits inside the shell, not around it: a lazy page's chunk
-          should replace the content column only, leaving the rail and the toast
-          host mounted. Hoisting it back up to <Routes> blanks the whole window
-          on every first visit to a route. */}
-      <main className="relative min-w-0 flex-1 overflow-y-auto">
-        <Suspense fallback={<RouteFallback />}>
-          <Outlet />
-        </Suspense>
-      </main>
-      <VToast />
-    </div>
-  )
+  const location = useLocation()
+  const cards = useReportStore(s => s.cards), loadCards = useReportStore(s => s.loadCards)
+  const collapsed = useUIStore(s => s.sidebarCollapsed), toggle = useUIStore(s => s.toggleSidebar)
+  const [error, setError] = useState('')
+  useEffect(() => { void loadCards().catch(e => setError(String(e.message))) }, [loadCards])
+  if (location.pathname.startsWith('/workspace/')) return <Outlet />
+  return <div className={'app-shell ' + (collapsed ? 'rail-compact' : '')}>
+    <aside className="sidebar">
+      <Link to="/" className="brand"><VLogo size={36} /><span>Vantage<small>Product comparisons</small></span></Link>
+      <nav aria-label="Main navigation">
+        <NavLink to="/" end><Plus size={18} /><span>New comparison</span></NavLink>
+        <NavLink to="/library"><History size={18} /><span>History</span></NavLink>
+      </nav>
+      <div className="recents"><p className="eyebrow">Recent comparisons</p>
+        {cards.slice(0, 8).map(c => <Link key={c.report_id} to={'/report/' + c.report_id} title={c.title}>{c.title}<ArrowUpRight size={13} /></Link>)}
+        {!cards.length && <p className="muted text-sm">Your comparisons will appear here.</p>}
+        {error && <p className="error text-sm">{error}</p>}
+      </div>
+      <div className="sidebar-foot"><span>Local workspace · Single user</span><button className="icon-button" onClick={toggle} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>{collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}</button></div>
+    </aside>
+    <main className="main-content"><Outlet /></main>
+  </div>
 }

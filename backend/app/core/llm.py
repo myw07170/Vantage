@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 import httpx
 
-from app.core import llm_mock, ratelimit, trace
+from app.core import budget, llm_mock, ratelimit, trace
 from app.core.config import get_settings
 
 TIER_CORE = "core"
@@ -147,9 +147,11 @@ def _complete_http(client: httpx.Client, messages: list[dict], model: str,
         payload["max_completion_tokens"] = max_tokens
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
+    task_budget = budget.CURRENT.get()
+    timeout = min(s.llm_timeout, task_budget.check()) if task_budget else s.llm_timeout
     response = client.post(
         s.llm_base_url.rstrip("/") + "/chat/completions",
-        headers={"Authorization": f"Bearer {s.llm_api_key}"}, json=payload,
+        headers={"Authorization": f"Bearer {s.llm_api_key}"}, json=payload, timeout=timeout,
     )
     response.raise_for_status()
     try:
@@ -169,7 +171,9 @@ def _complete_http(client: httpx.Client, messages: list[dict], model: str,
             um = data["usage"]
             pt = int(um.get("prompt_tokens") or 0)
             ct = int(um.get("completion_tokens") or 0)
-            usage = _Usage(pt, ct, int(um.get("total_tokens") or pt + ct))
+            total = int(um.get("total_tokens") or pt + ct)
+            if pt >= 0 and ct >= 0 and total > 0:
+                usage = _Usage(pt, ct, max(total, pt + ct))
         return content.strip(), usage
     except (ValueError, KeyError, IndexError, TypeError) as e:
         raise LLMResponseError("The LLM provider returned a malformed completion.") from e
@@ -197,6 +201,8 @@ def chat(
     use_model = model or s.llm_model_core
     json_mode = response_mime_type == "application/json"
     wire_messages = _request_messages(messages, json_mode, response_schema)
+    task_budget = budget.CURRENT.get()
+    budget.check()
     if s.is_mock:
         t0 = time.perf_counter()
         content = llm_mock.complete(messages, task_kind, mock_context or {}, json_mode)
@@ -210,9 +216,15 @@ def chat(
     est = ratelimit.estimate_tokens(wire_messages, max_tokens)
     for attempt in range(s.llm_max_retries + 1):
         with ratelimit.slot(ratelimit.limiter, tier, est) as lease:
+            reserved = max(est, sum(len(str(m.get("content", "")).encode("utf-8")) for m in wire_messages) // 2 + max_tokens)
+            if task_budget:
+                task_budget.reserve(reserved)
             try:
                 t0 = time.perf_counter()
                 content, usage = _complete_http(client, wire_messages, use_model, temperature, max_tokens, json_mode)
+                if task_budget:
+                    task_budget.reconcile(reserved, usage.total_tokens if usage is not None else None)
+                    task_budget.check()
                 latency = int((time.perf_counter() - t0) * 1000)
                 if usage is not None:
                     with _usage_lock:
@@ -221,10 +233,18 @@ def chat(
                 _record(use_model, messages, content, usage, latency, purpose, evidence_ids)
                 return content
             except Exception as e:
+                if task_budget:
+                    task_budget.estimated = True
+                _record(use_model, messages, "Call failed: " + type(e).__name__,
+                        _Usage(0, 0, reserved) if task_budget else None,
+                        int((time.perf_counter() - t0) * 1000), purpose + " (failed attempt; estimated usage)", evidence_ids)
                 if not _is_retryable(e) or attempt >= s.llm_max_retries:
                     raise
                 delay = ratelimit.backoff_delay(attempt, _retry_after(e))
-        time.sleep(delay)
+        if task_budget:
+            task_budget.sleep(delay)
+        else:
+            time.sleep(delay)
     raise AssertionError("unreachable")
 
 

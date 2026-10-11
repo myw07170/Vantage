@@ -23,6 +23,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from app.core.textquality import is_garbled
+from app.core import budget
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -122,7 +123,7 @@ def _cache_put(url: str, value: Dict[str, Any]) -> None:
 
 
 def fetch_page(
-    url: str, *, fallback_snippet: str = "", prefetched_text: str = ""
+    url: str, *, fallback_snippet: str = "", prefetched_text: str = "", refresh: bool = False
 ) -> Dict[str, Any]:
     """Fetch one page's body text and images.
 
@@ -134,15 +135,16 @@ def fetch_page(
 
     Returns `{url, text, images, og_image, ok, degraded, captured_at}`.
     """
+    budget.check()
     try:
         public_addresses(url)
     except (UnsafeURL, httpx.InvalidURL, ValueError) as exc:
         return {"url": url, "text": "", "images": [], "og_image": "", "ok": False,
                 "degraded": True, "blocked": True, "reason": str(exc), "captured_at": _now()}
-    if prefetched_text and len(prefetched_text) >= 200:
+    if not refresh and prefetched_text and len(prefetched_text) >= 200:
         return {
             "url": url,
-            "text": prefetched_text[:4000],
+            "text": prefetched_text[:24000],
             "images": [],
             "og_image": "",
             "ok": True,
@@ -151,7 +153,7 @@ def fetch_page(
         }
 
     cached = _cache_get(url)
-    if cached is not None:
+    if cached is not None and not refresh:
         return cached
 
     result: Dict[str, Any] = {
@@ -164,8 +166,9 @@ def fetch_page(
     }
     try:
         _wait_turn(domain_of(url))
+        task_budget = budget.CURRENT.get()
         with httpx.Client(
-            timeout=_TIMEOUT,
+            timeout=min(20, task_budget.check()) if task_budget else _TIMEOUT,
             follow_redirects=False,
             transport=PublicHTTPTransport(),
             trust_env=False,
@@ -173,6 +176,7 @@ def fetch_page(
         ) as client:
             current_url = url
             for hop in range(_MAX_REDIRECTS + 1):
+                budget.check()
                 public_addresses(current_url)
                 with client.stream("GET", current_url) as r:
                     if r.status_code in (301, 302, 303, 307, 308):
@@ -213,17 +217,22 @@ def fetch_page(
             text = fallback_snippet
         result.update(
             {
-                "text": text[:4000],
+                "text": text[:24000],
+                "published_at": _published_date(html),
+                "published_date_basis": "page publication metadata",
+                "url": current_url,
                 "images": _extract_images(html, current_url)[:6],
                 "og_image": _extract_og_image(html, current_url),
                 "ok": True,
                 "degraded": False,
             }
         )
+    except budget.BudgetExceeded:
+        raise
     except UnsafeURL as exc:
         result.update(text="", blocked=True, reason=str(exc))
     except Exception:
-        # Degrade to the snippet — credibility scoring already penalizes this.
+        # Retain the public snippet with an explicit fetch limitation.
         pass
 
     result["captured_at"] = _now()
@@ -236,7 +245,7 @@ def _extract_text(html: str) -> str:
     try:
         import trafilatura
 
-        out = trafilatura.extract(html, include_comments=False, include_tables=False)
+        out = trafilatura.extract(html, include_comments=False, include_tables=True)
         if out:
             return out.strip()
     except Exception:
@@ -248,10 +257,25 @@ def _extract_text(html: str) -> str:
         soup = BeautifulSoup(html, "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header"]):
             tag.decompose()
-        ps = [p.get_text(" ", strip=True) for p in soup.find_all("p")]
+        ps = [p.get_text(" ", strip=True) for p in soup.find_all(["p", "table", "h1", "h2", "li"])]
         return "\n".join(p for p in ps if len(p) > 20)
     except Exception:
         return ""
+
+
+def _published_date(html: str) -> str | None:
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+    for selector in ('meta[property="article:published_time"]', 'meta[name="date"]',
+                     'meta[itemprop="datePublished"]', 'time[itemprop="datePublished"]'):
+        element = soup.select_one(selector)
+        if element:
+            value = element.get("content") or element.get("datetime") or element.get_text(strip=True)
+            try:
+                return _dt.datetime.fromisoformat(str(value).replace("Z", "+00:00")).date().isoformat()
+            except (ValueError, TypeError):
+                pass
+    return None
 
 
 def _extract_images(html: str, base_url: str) -> List[Dict[str, str]]:

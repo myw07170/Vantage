@@ -1,58 +1,56 @@
-"""Deterministic collection and isolated SQLite for research/API regressions."""
+"""Isolated storage and deterministic sources; no model or search network in tests."""
 import sqlite3
 import threading
 from types import SimpleNamespace
-
 import httpx
 import pytest
-
-from app.core import db, llm, llm_mock, orchestrator as pipeline, trace
+from app.core import db, llm, llm_mock, orchestrator as pipeline, preparation, trace
 from app.core.config import Settings
-from app.core.platforms import Platform
+
+@pytest.fixture
+def scope():
+    return {"products": [
+        {"id": "notion", "name": "Notion", "website": "https://www.notion.com", "category": "Knowledge management software", "own_product": False, "confirmed": True},
+        {"id": "obsidian", "name": "Obsidian", "website": "https://obsidian.md", "category": "Knowledge management software", "own_product": False, "confirmed": True}],
+        "topics": [{"id": "features", "name": "Features and limitations", "focus": []},
+                   {"id": "pricing", "name": "Plans and billing", "focus": []},
+                   {"id": "positioning", "name": "Audience and positioning", "focus": []}],
+        "changes_days": 90, "scope_acknowledged": False, "limitations": ""}
 
 @pytest.fixture
 def offline(monkeypatch, tmp_path):
     settings = Settings(_env_file=None, llm_provider="mock")
     monkeypatch.setattr(llm, "get_settings", lambda: settings)
-    monkeypatch.setattr(pipeline, "_settings", settings)
-    monkeypatch.setattr(llm, "TOKEN_USAGE", {"total": 0})
-    monkeypatch.setattr(pipeline, "TOKEN_USAGE", llm.TOKEN_USAGE)
+    monkeypatch.setattr(pipeline, "get_settings", lambda: settings)
+    monkeypatch.setattr(preparation, "get_settings", lambda: settings)
     monkeypatch.setattr(db, "_DB_PATH", tmp_path / "test.db")
     monkeypatch.setattr(db, "_LOCAL", threading.local())
     monkeypatch.setattr(db, "_SCHEMA_READY", False)
     connections = []
-    original_connect = sqlite3.connect
+    original = sqlite3.connect
     def connect(*args, **kwargs):
-        conn = original_connect(*args, **kwargs)
+        conn = original(*args, **kwargs)
         connections.append(conn)
         return conn
     monkeypatch.setattr(db.sqlite3, "connect", connect)
     def network_forbidden(*args, **kwargs):
-        pytest.fail("Offline pipeline attempted network access")
+        pytest.fail("Offline test attempted network access")
     monkeypatch.setattr(httpx.Client, "send", network_forbidden)
-
     searches, fetches, operations = [], [], []
-    def search(queries, **kwargs):
-        searches.extend(queries)
-        brand = queries[0].split()[0]
-        return [{"url": f"https://{brand.lower()}-source-{i}.test/product",
-                 "title": f"{brand} documentation {i}",
-                 "snippet": f"{brand} documentation explains product feature number {i}. " * 6,
-                 "content": f"{brand} documentation explains product feature number {i}. " * 6}
-                for i in range(4)]
+    def search(query, **kwargs):
+        searches.append(query)
+        name = "Notion" if "Notion" in query else "Obsidian"
+        host = "www.notion.com" if name == "Notion" else "obsidian.md"
+        return [{"url": f"https://{host}/pricing", "title": name + " pricing", "snippet": name + " supports offline notes. Pro costs USD 10 per seat per month, billed monthly."}]
     def fetch(url, **kwargs):
-        fetches.append(url)
-        return {"ok": True, "text": kwargs.get("prefetched_text", ""), "images": []}
-    def comments(brand, category, limit):
-        return [{"text": f"I love {brand}; this product is great for our team.",
-                 "url": f"https://news.ycombinator.com/item?id={brand}", "title": f"{brand} review"},
-                {"text": f"{brand} is expensive and slow for our workflow.",
-                 "url": f"https://news.ycombinator.com/item?id={brand}-negative", "title": f"{brand} review"}]
-    monkeypatch.setattr(pipeline, "multi_search", search)
+        fetches.append((url, kwargs))
+        name = "Notion" if "notion" in url else "Obsidian"
+        text = name + " supports offline notes. Pro costs USD 10 per seat per month, billed monthly."
+        return {"url": url, "text": text, "ok": True, "degraded": False, "captured_at": "2026-10-10T12:00:00Z"}
+    monkeypatch.setattr(pipeline, "search", search)
     monkeypatch.setattr(pipeline, "fetch_page", fetch)
-    platform = Platform("hackernews", "Hacker News", "news.ycombinator.com", "hackernews", collector=comments)
-    monkeypatch.setattr(pipeline, "api_platforms", lambda: [platform])
-    monkeypatch.setattr(pipeline, "search_platforms", lambda: [])
+    monkeypatch.setattr(preparation, "search", search)
+    monkeypatch.setattr(preparation, "fetch_page", fetch)
     original_complete = llm_mock.complete
     def complete(messages, kind, context, json_mode):
         operations.append((kind, context))
@@ -62,10 +60,8 @@ def offline(monkeypatch, tmp_path):
     from app.core.tasks import TaskRunner
     monkeypatch.setattr(main, "settings", settings)
     monkeypatch.setattr(main, "runner", TaskRunner())
-    monkeypatch.setattr(pipeline, "public_addresses", lambda url: ["93.184.216.34"])
-    yield SimpleNamespace(searches=searches, fetches=fetches, operations=operations)
+    monkeypatch.setattr(main, "preparer", preparation.PreparationRunner())
+    yield SimpleNamespace(settings=settings, searches=searches, fetches=fetches, operations=operations)
     for conn in connections:
         conn.close()
-    trace.set_context("", "", "", "")
-
-
+    trace.clear_context()
