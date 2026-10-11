@@ -3,8 +3,8 @@
 `search()` walks the configured provider chain (SEARCH_PROVIDERS, default
 `exa,tavily,ddg`) and returns the first provider's normalized results. A
 provider that raises `SearchUnavailable` — bad key, exhausted quota, 5xx — is
-skipped and put in a short cooldown so a dead key is not retried on every one
-of the ~40 queries a deep run makes.
+skipped and put in a short cooldown so a dead key is not retried for every
+query in the comparison task.
 
 An empty result set is *not* a failover trigger: the provider worked and found
 nothing, and burning a second provider's quota on the same query would not
@@ -17,7 +17,7 @@ import threading
 import time
 from typing import List, Optional
 
-from app.core import trace
+from app.core import budget, trace
 from app.core.config import get_settings
 from app.core.search import ddg, exa, tavily
 from app.core.search.base import Freshness, SearchUnavailable
@@ -157,11 +157,14 @@ def search(
     errors: list[str] = []
 
     for name in _chain():
+        budget.check()
         if not _available(name):
             continue
         provider = _PROVIDERS[name]
         try:
             raw = provider.search(query, num=over, site=site, freshness=freshness)
+        except budget.BudgetExceeded:
+            raise
         except SearchUnavailable as e:
             _bench(name, e)
             errors.append(f"{name}: {e}")

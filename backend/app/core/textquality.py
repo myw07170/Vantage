@@ -68,8 +68,8 @@ def is_relevant_content(text: str, brands, query: str = "") -> bool:
     """Second-pass relevance check on the extracted body.
 
     Deliberately permissive — one brand or keyword hit is enough. Over-filtering
-    here costs evidence, whereas a weakly-relevant page is already penalized by
-    its credibility score. Short texts (usually a snippet fallback) always pass.
+    here costs evidence. The comparison collector separately checks product
+    identity and the reviewer checks support. Short snippets pass this heuristic.
     """
     if not text or len(text) < 80:
         return True

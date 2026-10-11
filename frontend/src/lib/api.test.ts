@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deleteSubscription, openTaskStream, setApiErrorListener, submitClarify, submitFeedback, createTask } from './api'
-import { useTaskStore } from '../store/taskStore'
+import { ApiError, applyCandidate, createTask, openTaskStream, saveEdits, startTask } from './api'
+import { clearLegacyStorage, loadDraft, saveDraft } from './drafts'
+import { useReportStore } from '../store/reportStore'
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -9,113 +10,101 @@ class FakeEventSource {
   closed = false
   listeners: Record<string, ((event: MessageEvent) => void)[]> = {}
   url: string
-  constructor(url: string) {
-    this.url = url
-    FakeEventSource.instances.push(this)
-  }
-  addEventListener(type: string, handler: (event: MessageEvent) => void) {
-    this.listeners[type] = [...(this.listeners[type] ?? []), handler]
-  }
+  constructor(url: string) { this.url = url; FakeEventSource.instances.push(this) }
+  addEventListener(type: string, handler: (event: MessageEvent) => void) { this.listeners[type] = [...(this.listeners[type] || []), handler] }
   close() { this.closed = true }
-  emit(type: string, data: unknown, id: number) {
-    const event = new MessageEvent(type, { data: JSON.stringify(data), lastEventId: String(id) })
-    for (const handler of this.listeners[type] ?? []) handler(event)
-    if (type === 'error') this.onerror?.(event)
-  }
+  emit(type: string, data: unknown, id: number) { for (const h of this.listeners[type] || []) h(new MessageEvent(type, { data: JSON.stringify(data), lastEventId: String(id) })) }
 }
+beforeEach(() => { vi.useFakeTimers(); FakeEventSource.instances = []; vi.stubGlobal('EventSource', FakeEventSource); vi.stubGlobal('window', globalThis) })
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
-beforeEach(() => {
-  vi.useFakeTimers()
-  FakeEventSource.instances = []
-  vi.stubGlobal('EventSource', FakeEventSource)
-  vi.stubGlobal('window', globalThis)
-})
-afterEach(() => {
-  setApiErrorListener(null)
-  vi.unstubAllGlobals()
-  vi.useRealTimers()
-})
-
-describe('failed mutations', () => {
-  it('never reports failed clarification, feedback or deletion as successful', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Backend down')))
-    const errors = vi.fn()
-    setApiErrorListener(errors)
-    expect(await submitClarify('t_1', {})).toEqual({ ok: false })
-    expect(await submitFeedback('r_1', 1, 4)).toEqual({ ok: false })
-    expect(await deleteSubscription('sub_1')).toEqual({ ok: false })
-    expect(errors).toHaveBeenCalledTimes(3)
-  })
-  it('surfaces server failure and submits subscription association', async () => {
-    const fetch = vi.fn().mockResolvedValue({ ok: false, status: 503,
-      json: async () => ({ detail: 'Configure a model key' }) })
+describe('mutation contracts', () => {
+  it('creates a local draft without retired parameters', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ task_id: 't1' }) })
     vi.stubGlobal('fetch', fetch)
-    const error = vi.fn()
-    setApiErrorListener(error)
-    expect((await createTask('Notion', 'quick', 'sub_1')).taskId).toBe('')
-    expect(JSON.parse(fetch.mock.calls[0][1].body).subscription_id).toBe('sub_1')
-    expect(error).toHaveBeenCalledWith(expect.stringContaining('Configure a model key'))
+    expect((await createTask('Notion vs Obsidian')).task_id).toBe('t1')
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ query: 'Notion vs Obsidian' })
+  })
+  it('never treats a failed save as success', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({ detail: 'Backend unavailable' }) }))
+    await expect(saveEdits('r', 'v', { item: 'edit' })).rejects.toThrow('Backend unavailable')
+  })
+  it('preserves a version conflict as a typed failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ detail: 'Current version changed' }) }))
+    await expect(applyCandidate('r', 'base', 'candidate')).rejects.toMatchObject({ status: 409 })
+    await expect(applyCandidate('r', 'base', 'candidate')).rejects.toBeInstanceOf(ApiError)
+  })
+  it('surfaces structured scope validation messages', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 422, json: async () => ({ detail: [{ msg: 'Duplicate product names' }] }) }))
+    await expect(startTask('t', { products: [], topics: [], changes_days: 90, scope_acknowledged: false, limitations: '' })).rejects.toThrow('Duplicate product names')
   })
 })
 
-describe('SSE subscribers', () => {
-  it('resumes with a cursor and suppresses duplicates', () => {
-    const onEvent = vi.fn()
-    const close = openTaskStream('t_1', { onEvent })
+describe('read-only stream subscriptions', () => {
+  it('resumes by cursor and ignores duplicate events', () => {
+    const onEvent = vi.fn(), close = openTaskStream('t', { onEvent })
     let source = FakeEventSource.instances[0]
-    source.emit('progress', { percent: 1 }, 8)
-    source.onerror?.(new Event('error'))
-    vi.runOnlyPendingTimers()
+    source.emit('progress', { percent: 2 }, 8)
+    source.onerror?.(new Event('error')); vi.runOnlyPendingTimers()
     source = FakeEventSource.instances[1]
     expect(source.url).toContain('after=8')
-    source.emit('progress', { percent: 1 }, 8)
-    source.emit('progress', { percent: 2 }, 9)
+    source.emit('progress', { percent: 2 }, 8); source.emit('progress', { percent: 3 }, 9)
     expect(onEvent).toHaveBeenCalledTimes(2)
     close()
-  })
-  it('caps retries even if every connection opens before dropping', () => {
-    const onEvent = vi.fn()
-    openTaskStream('t_1', { onEvent })
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const source = FakeEventSource.instances.at(-1)!
-      source.onopen?.()
-      source.onerror?.(new Event('error'))
-      vi.runOnlyPendingTimers()
-    }
-    expect(FakeEventSource.instances).toHaveLength(4)
-    expect(onEvent).toHaveBeenCalledWith('error', expect.any(Object), 0)
-  })
-  it.each(['done', 'error'])('closes on terminal %s without retrying', (type) => {
-    const onEvent = vi.fn(), onStatus = vi.fn()
-    openTaskStream('t_1', { onEvent, onStatus })
-    const source = FakeEventSource.instances[0]
-    source.emit(type, { reportId: 'r_1', message: 'Failed' }, 11)
-    source.onerror?.(new Event('error'))
-    vi.runOnlyPendingTimers()
     expect(source.closed).toBe(true)
-    expect(FakeEventSource.instances).toHaveLength(1)
-    expect(onEvent).toHaveBeenCalledTimes(1)
-    expect(onStatus).toHaveBeenLastCalledWith('closed')
   })
-  it('cleanup cancels pending retries and ignores late events', () => {
+  it('caps retries even when every connection opens', () => {
     const onEvent = vi.fn()
-    const close = openTaskStream('t_1', { onEvent })
-    const source = FakeEventSource.instances[0]
-    source.onerror?.(new Event('error'))
-    close()
-    source.emit('done', { reportId: 'r_1' }, 12)
-    vi.runOnlyPendingTimers()
-    expect(FakeEventSource.instances).toHaveLength(1)
-    expect(onEvent).not.toHaveBeenCalled()
+    openTaskStream('t', { onEvent })
+    for (let i = 0; i < 4; i++) { const s = FakeEventSource.instances.at(-1)!; s.onopen?.(); s.onerror?.(new Event('error')); vi.runOnlyPendingTimers() }
+    expect(FakeEventSource.instances).toHaveLength(4)
+    expect(onEvent).toHaveBeenCalledWith('error', expect.objectContaining({ message: expect.stringContaining('may still be running') }), 0)
   })
-  it('task store deduplicates replay and treats errors as terminal', () => {
-    const store = useTaskStore.getState()
-    store.reset('t_1', 'Notion')
-    store.ingest('progress', { percent: 30 }, 5)
-    store.ingest('progress', { percent: 1 }, 4)
-    expect(useTaskStore.getState().progress.percent).toBe(30)
-    store.ingest('error', { message: 'Interrupted' }, 6)
-    expect(useTaskStore.getState().running).toBe(false)
-    expect(useTaskStore.getState().streamStatus).toBe('closed')
+  it.each(['done', 'error'])('closes on terminal %s without reconnecting', type => {
+    const onEvent = vi.fn()
+    openTaskStream('t', { onEvent })
+    const s = FakeEventSource.instances[0]
+    s.emit(type, {}, 4); s.onerror?.(new Event('error')); vi.runAllTimers()
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(s.closed).toBe(true)
+  })
+  it('ignores events from an abandoned connection', () => {
+    const onEvent = vi.fn(), close = openTaskStream('t', { onEvent })
+    const old = FakeEventSource.instances[0]
+    old.onerror?.(new Event('error')); vi.runOnlyPendingTimers()
+    old.emit('progress', {}, 99)
+    expect(onEvent).not.toHaveBeenCalled()
+    close()
+  })
+  it('disposing cancels a pending reconnect', () => {
+    const close = openTaskStream('t', { onEvent: vi.fn() })
+    FakeEventSource.instances[0].onerror?.(new Event('error'))
+    close(); vi.runAllTimers()
+    expect(FakeEventSource.instances).toHaveLength(1)
+  })
+})
+
+describe('current versions and local drafts', () => {
+  it('always reloads the server current pointer', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ report_id: 'r', current_version_id: 'old' }) }).mockResolvedValueOnce({ ok: true, json: async () => ({ report_id: 'r', current_version_id: 'new' }) })
+    vi.stubGlobal('fetch', fetch)
+    await useReportStore.getState().load('r')
+    expect((await useReportStore.getState().load('r')).current_version_id).toBe('new')
+    expect(fetch).toHaveBeenCalledTimes(2)
+    useReportStore.getState().invalidate('r')
+    expect(useReportStore.getState().reports.r).toBeUndefined()
+  })
+  it('clears only legacy business storage once and protects new drafts', () => {
+    const data = new Map<string, string>([['vantage.annotations.v1', '{}'], ['vantage.knowledge.v1', '[]'], ['vantage.sidebar-collapsed', '1']])
+    vi.stubGlobal('localStorage', { getItem: (k: string) => data.get(k) || null, setItem: (k: string, v: string) => data.set(k, v), removeItem: (k: string) => data.delete(k) })
+    saveDraft('r', 'base', { fact: 'Unsaved correction' })
+    clearLegacyStorage(); clearLegacyStorage()
+    expect(data.has('vantage.annotations.v1')).toBe(false)
+    expect(data.has('vantage.knowledge.v1')).toBe(false)
+    expect(data.get('vantage.sidebar-collapsed')).toBe('1')
+    expect(loadDraft('r', 'base')).toEqual({ fact: 'Unsaved correction' })
+    expect(loadDraft('r', 'different-base')).toEqual({})
+    saveDraft('r', 'base', {})
+    expect(loadDraft('r', 'base')).toEqual({})
   })
 })

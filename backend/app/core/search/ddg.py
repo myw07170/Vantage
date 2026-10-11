@@ -12,6 +12,8 @@ import time
 from typing import Optional
 
 from app.core.search.base import Freshness, SearchUnavailable, now_iso
+from app.core import budget
+from app.core.config import get_settings
 
 name = "ddg"
 
@@ -60,9 +62,17 @@ def search(
     with _lock:
         gap = time.monotonic() - _last_call
         if gap < _MIN_INTERVAL:
-            time.sleep(_MIN_INTERVAL - gap)
+            current = budget.CURRENT.get()
+            if current:
+                current.sleep(_MIN_INTERVAL - gap)
+            else:
+                time.sleep(_MIN_INTERVAL - gap)
         try:
-            rows = DDGS().text(q, **kwargs) or []
+            current = budget.CURRENT.get()
+            timeout = min(get_settings().search_timeout, current.check()) if current else get_settings().search_timeout
+            rows = DDGS(timeout=timeout).text(q, **kwargs) or []
+        except budget.BudgetExceeded:
+            raise
         except Exception as e:  # noqa: BLE001
             raise SearchUnavailable(f"DuckDuckGo request failed: {e}") from e
         finally:

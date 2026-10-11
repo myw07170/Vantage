@@ -1,339 +1,85 @@
-import type {
-  CreateTaskResp,
-  DashboardStats,
-  EvidenceQueryResp,
-  Expert,
-  ExpertWorkload,
-  Report,
-  ReportCard,
-  ReportSection,
-  SSEEventType,
-  StreamStatus,
-  Subscription,
-  TaskDetail,
-  TraceSpan,
-} from '../types'
+import type { Annotation, Anchor, HighlightColor, Report, ReportCard, Scope, SSEEventType, StreamStatus, Task, TraceSpan, Version, VersionMeta } from '../types'
+export const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? ''
-
-/** Set by `safeJson` when a request fails; the UI surfaces it in a toast. */
-export type ApiErrorListener = (message: string) => void
-let onApiError: ApiErrorListener | null = null
-export function setApiErrorListener(fn: ApiErrorListener | null) {
-  onApiError = fn
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) { super(message); this.status = status }
 }
-
-/**
- * Fetch JSON, falling back rather than throwing.
- *
- * The fallback keeps a failed request from blanking the screen, but unlike a
- * silent catch it also reports the failure so a broken backend is visible
- * instead of looking like an empty database.
- */
-async function safeJson<T>(path: string, init?: RequestInit, fallback?: T): Promise<T> {
-  try {
-    const r = await fetch(`${API_BASE}${path}`, init)
-    if (!r.ok) {
-      const body = await r.json().catch(() => null)
-      throw new Error(typeof body?.detail === 'string' ? body.detail : `HTTP ${r.status}`)
-    }
-    return (await r.json()) as T
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    onApiError?.(`Request failed: ${path} (${msg})`)
-    if (fallback !== undefined) return fallback
-    throw e
+export async function request<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+  const response = await fetch(API_BASE + path, { method, headers: body === undefined ? undefined : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+  const value = await response.json().catch(() => null)
+  if (!response.ok) {
+    const detail = value?.detail
+    const message = typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((d: { msg: string }) => d.msg).join(' ') : 'Request failed (' + response.status + ').'
+    throw new ApiError(message, response.status)
   }
+  return value as T
 }
+export const createTask = (query: string) => request<Task>('/api/tasks', 'POST', { query })
+export const prepareTask = (id: string, base_revision: number, answers: Record<string, string | string[]>, draft_scope?: unknown) => request<Task>('/api/tasks/' + id + '/prepare', 'POST', { base_revision, answers, draft_scope })
+export const fetchAnnotations = (id: string, version: string) => request<Annotation[]>('/api/reports/' + id + '/annotations?version_id=' + encodeURIComponent(version))
+export const addAnnotation = (id: string, version_id: string, anchors: Anchor[], color: HighlightColor, comment: string) => request<Annotation>('/api/reports/' + id + '/annotations', 'POST', { version_id, anchors, color, comment })
+export const patchAnnotation = (id: string, note: Annotation, patch: { color?: HighlightColor; comment?: string }) => request<Annotation>('/api/reports/' + id + '/annotations/' + note.annotation_id, 'PATCH', { version_id: note.version_id, revision: note.revision, ...patch })
+export const removeAnnotation = (id: string, note: Annotation) => request<{ ok: boolean }>('/api/reports/' + id + '/annotations/' + note.annotation_id + '?version_id=' + note.version_id + '&revision=' + note.revision, 'DELETE')
+export const fetchTask = (id: string) => request<Task>('/api/tasks/' + id)
+export const fetchTasks = () => request<Task[]>('/api/tasks')
+export const startTask = (id: string, scope: Scope) => request<Task>('/api/tasks/' + id + '/start', 'POST', scope)
+export const retryTask = (id: string) => request<Task>('/api/tasks/' + id + '/retry', 'POST')
+export const fetchReports = () => request<ReportCard[]>('/api/reports')
+export const fetchReport = (id: string) => request<Report>('/api/reports/' + id)
+export const fetchVersions = (id: string) => request<VersionMeta[]>('/api/reports/' + id + '/versions')
+export const fetchVersion = (id: string, version: string) => request<Version>('/api/reports/' + id + '/versions/' + version)
+export const fetchTrace = (task: string) => request<{ spans: TraceSpan[] }>('/api/tasks/' + task + '/trace')
+export const saveEdits = (id: string, base: string, edits: Record<string, string>) => request<Version>('/api/reports/' + id + '/edits', 'POST', { base_version_id: base, edits })
+export const applyCandidate = (id: string, base: string, candidate: string) => request<Version>('/api/reports/' + id + '/apply', 'POST', { base_version_id: base, candidate_version_id: candidate })
+export const restoreVersion = (id: string, base: string, version: string) => request<Version>('/api/reports/' + id + '/restore', 'POST', { base_version_id: base, version_id: version })
+export const followup = (id: string, base: string, target: string, question: string, selected_text = '') => request<Task>('/api/reports/' + id + '/followups', 'POST', { base_version_id: base, target_ids: [target], selected_text, question })
+export const reviewReport = (id: string, base: string, target_ids: string[] = []) => request<Task>('/api/reports/' + id + '/reviews', 'POST', { base_version_id: base, target_ids })
+export const updateReport = (id: string, patch: { title?: string; starred?: boolean }) => request<Report>('/api/reports/' + id, 'PATCH', patch)
+export const deleteReport = (id: string) => request<{ ok: boolean }>('/api/reports/' + id, 'DELETE')
 
-/** The roster, from the backend or the bundled copy if it is unreachable. */
-export async function fetchExperts(): Promise<Expert[]> {
-  try {
-    const r = await fetch(`${API_BASE}/api/experts`)
-    if (r.ok) {
-      const data = await r.json()
-      if (Array.isArray(data) && data.length) return data
-      if (data?.experts?.length) return data.experts
-    }
-  } catch {
-    /* fall through to the bundled copy */
-  }
-  const local = await fetch('/assets/experts.json')
-  return (await local.json()) as Expert[]
-}
-
-export async function createTask(
-  query: string,
-  mode: string = 'deep',
-  subscriptionId?: string,
-): Promise<CreateTaskResp> {
-  return safeJson<CreateTaskResp>(
-    '/api/tasks',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, mode, subscription_id: subscriptionId ?? '' }),
-    },
-    { taskId: '', needClarify: false },
-  )
-}
-
-export async function fetchTask(taskId: string): Promise<TaskDetail | null> {
-  return safeJson<TaskDetail | null>(`/api/tasks/${taskId}`, undefined, null)
-}
-
-export async function submitClarify(
-  taskId: string,
-  answers: Record<string, unknown>,
-): Promise<{ ok: boolean }> {
-  return safeJson(
-    `/api/tasks/${taskId}/clarify`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answers }),
-    },
-    { ok: false },
-  )
-}
-
-export async function fetchReport(reportId: string): Promise<Report | null> {
-  return safeJson<Report | null>(`/api/reports/${reportId}`, undefined, null)
-}
-
-export async function fetchReportTrace(reportId: string): Promise<{ spans: TraceSpan[] }> {
-  return safeJson<{ spans: TraceSpan[] }>(`/api/reports/${reportId}/trace`, undefined, {
-    spans: [],
-  })
-}
-
-export async function submitFeedback(
-  reportId: string,
-  editedBlocks: number,
-  totalBlocks: number,
-  data: Record<string, unknown> = {},
-): Promise<{ ok: boolean; report?: Report }> {
-  return safeJson(
-    `/api/reports/${reportId}/feedback`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        edited_blocks: editedBlocks,
-        total_blocks: totalBlocks,
-        data,
-      }),
-    },
-    { ok: false },
-  )
-}
-
-export async function refineSection(
-  reportId: string,
-  sectionId: string,
-  annotations: string[],
-): Promise<{ ok: boolean; section?: ReportSection; report?: Report; message?: string }> {
-  return safeJson(
-    `/api/reports/${reportId}/refine`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ section_id: sectionId, annotations }),
-    },
-    { ok: false, message: 'Request failed' },
-  )
-}
-
-export async function fetchReports(): Promise<ReportCard[]> {
-  return safeJson<ReportCard[]>('/api/reports', undefined, [])
-}
-
-/** Renames or stars a report. Send one field; omitted fields are left alone. */
-export async function updateReport(
-  reportId: string,
-  patch: { title?: string; starred?: boolean },
-): Promise<{ ok: boolean; message?: string }> {
-  return safeJson(
-    `/api/reports/${reportId}`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    },
-    { ok: false, message: 'Request failed' },
-  )
-}
-
-/** Deletes the report and everything derived from it: evidence, traces, feedback. */
-export async function deleteReport(
-  reportId: string,
-): Promise<{ ok: boolean; message?: string }> {
-  return safeJson(`/api/reports/${reportId}`, { method: 'DELETE' }, {
-    ok: false,
-    message: 'Request failed',
-  })
-}
-
-export async function fetchDashboard(): Promise<DashboardStats | null> {
-  return safeJson<DashboardStats | null>('/api/dashboard', undefined, null)
-}
-
-export async function fetchEvidences(params?: {
-  brand?: string
-  source_type?: string
-  min_cred?: number
-}): Promise<EvidenceQueryResp> {
-  const qs = new URLSearchParams()
-  if (params?.brand) qs.set('brand', params.brand)
-  if (params?.source_type) qs.set('source_type', params.source_type)
-  if (params?.min_cred != null) qs.set('min_cred', String(params.min_cred))
-  const suffix = qs.toString() ? `?${qs.toString()}` : ''
-  return safeJson<EvidenceQueryResp>(`/api/evidences${suffix}`, undefined, {
-    items: [],
-    facets: { total: 0, by_type: {}, by_brand: {} },
-  })
-}
-
-export async function fetchSubscriptions(): Promise<Subscription[]> {
-  return safeJson<Subscription[]>('/api/subscriptions', undefined, [])
-}
-
-export async function createSubscription(
-  query: string,
-  brands: string[],
-): Promise<Subscription | null> {
-  return safeJson<Subscription | null>(
-    '/api/subscriptions',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, brands }),
-    },
-    null,
-  )
-}
-
-export async function deleteSubscription(subId: string): Promise<{ ok: boolean }> {
-  return safeJson(`/api/subscriptions/${subId}`, { method: 'DELETE' }, { ok: false })
-}
-
-export async function fetchWorkload(): Promise<ExpertWorkload[]> {
-  return safeJson<ExpertWorkload[]>('/api/experts/workload', undefined, [])
-}
-
-/* ── SSE research stream ─────────────────────────────────────────────────── */
-
-export interface SSEHandlers {
-  /** `id` is the server's monotonic sequence number, used for de-duplication. */
-  onEvent: (type: SSEEventType, data: unknown, id: number) => void
-  onStatus?: (status: StreamStatus) => void
-  onOpen?: () => void
-}
-
-const SSE_TYPES: SSEEventType[] = [
-  'node_update',
-  'thought',
-  'message',
-  'evidence',
-  'chart',
-  'image',
-  'progress',
-  'trace',
-  'report_ready',
-  'done',
-  'error',
-]
-
-/**
- * Subscribe to a task's event stream.
- *
- * Research belongs to the server task. Reconnect with a cursor, at most three
- * times per subscription, and close immediately on either terminal event.
- */
-export function openTaskStream(taskId: string, handlers: SSEHandlers): () => void {
-  const url = `${API_BASE}/api/tasks/${taskId}/stream`
-  const MAX_RETRIES = 3
-
-  let es: EventSource | null = null
-  let finished = false
-  let disposed = false
-  let retries = 0
-  let lastEventId = 0
-  let retryTimer: number | undefined
-
+export function openTaskStream(taskId: string, handlers: { onEvent: (type: SSEEventType, data: unknown, id: number) => void; onStatus?: (status: StreamStatus) => void }): () => void {
+  let source: EventSource | null = null
+  let finished = false, disposed = false, retries = 0, cursor = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
   const connect = () => {
-    if (disposed) return
-    handlers.onStatus?.(retries === 0 ? 'connecting' : 'reconnecting')
-    if (finished) return
-    const source = new EventSource(`${url}?after=${lastEventId}`)
-    es = source
-
-    source.onopen = () => {
-      if (disposed || finished || source !== es) return
-      handlers.onStatus?.('open')
-      handlers.onOpen?.()
-    }
-
-    for (const t of SSE_TYPES) {
-      source.addEventListener(t, (ev) => {
-        if (disposed || finished || source !== es) return
-        const me = ev as MessageEvent
-        if (typeof me.data !== 'string') return // native transport error
-        const id = Number(me.lastEventId || 0)
-        if (id > 0 && id <= lastEventId) return
-        if (id > 0) lastEventId = id
-        let parsed: unknown = me.data
-        try {
-          parsed = JSON.parse(me.data)
-        } catch {
-          /* keep the raw string */
-        }
-        if (t === 'done' || t === 'error') {
+    if (disposed || finished) return
+    handlers.onStatus?.(retries ? 'reconnecting' : 'connecting')
+    const connection = new EventSource(API_BASE + '/api/tasks/' + taskId + '/stream?after=' + cursor)
+    source = connection
+    connection.onopen = () => { if (!disposed && !finished && source === connection) handlers.onStatus?.('open') }
+    for (const type of ['role', 'handoff', 'evidence', 'progress', 'notice', 'activity', 'done', 'error'] as SSEEventType[]) {
+      connection.addEventListener(type, event => {
+        if (disposed || finished || source !== connection) return
+        const message = event as MessageEvent
+        if (typeof message.data !== 'string') return
+        const id = Number(message.lastEventId || 0)
+        if (id && id <= cursor) return
+        let data: unknown
+        try { data = JSON.parse(message.data) } catch { return }
+        if (id) cursor = id
+        if (type === 'done' || type === 'error') {
           finished = true
-          source.close()
-          window.clearTimeout(retryTimer)
+          connection.close()
+          clearTimeout(timer)
           handlers.onStatus?.('closed')
         }
-        handlers.onEvent(t, parsed, id)
+        handlers.onEvent(type, data, id)
       })
     }
-
-    source.onerror = (ev) => {
-      if (ev instanceof MessageEvent) return // business error is handled above
-      source.close()
-      if (source !== es) return
-      if (disposed) return
-      if (finished) {
-        // EventSource always errors when the server closes a finished stream.
+    connection.onerror = event => {
+      if (event instanceof MessageEvent || disposed || finished || source !== connection) return
+      connection.close()
+      if (retries >= 3) {
         handlers.onStatus?.('closed')
+        handlers.onEvent('error', { message: 'Connection lost. The task may still be running. Refresh to restore its saved state.' }, 0)
         return
       }
-      if (retries >= MAX_RETRIES) {
-        handlers.onStatus?.('closed')
-        handlers.onEvent(
-          'error',
-          {
-            message:
-              'Lost connection to the research stream and could not reconnect. ' +
-              'The run may still be completing on the server — check your reports.',
-          },
-          0,
-        )
-        return
-      }
-      retries += 1
+      retries++
       handlers.onStatus?.('reconnecting')
-      retryTimer = window.setTimeout(connect, Math.min(1000 * 2 ** retries, 8000))
+      timer = setTimeout(connect, Math.min(1000 * 2 ** retries, 8000))
     }
   }
-
   connect()
-
-  return () => {
-    disposed = true
-    window.clearTimeout(retryTimer)
-    es?.close()
-  }
+  return () => { disposed = true; clearTimeout(timer); source?.close() }
 }
-
-export { API_BASE }

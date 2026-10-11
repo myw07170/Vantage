@@ -20,7 +20,7 @@ class Settings(BaseSettings):
         env_file=_ENV_FILE, env_file_encoding="utf-8", extra="ignore"
     )
 
-    # core/aux: writing, analysis, review; fast: planning, dispatch, sentiment.
+    # Research roles all use CORE. FAST remains an adapter configuration setting.
     llm_provider: Literal["mock", "qwen", "openai"] = "mock"
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
@@ -43,18 +43,17 @@ class Settings(BaseSettings):
     llm_timeout: float = Field(default=180.0, gt=0)
     llm_max_retries: int = Field(default=3, ge=0)
 
+    research_token_limit: int = Field(default=100000, gt=0)
+    research_time_limit_seconds: float = Field(default=1200, gt=0)
+    scope_token_limit: int = Field(default=12000, gt=0)
+    scope_time_limit_seconds: float = Field(default=120, gt=0)
+
     # ---- Search -------------------------------------------------------------
     # Ordered failover chain. Each name must match a provider in core/search/.
     search_providers: str = "exa,tavily,ddg"
     exa_api_key: str = ""
     tavily_api_key: str = ""
     search_timeout: float = 30.0
-
-    # ---- Social listening ---------------------------------------------------
-    # Reddit: register a "script" app at https://www.reddit.com/prefs/apps
-    reddit_client_id: str = ""
-    reddit_client_secret: str = ""
-    reddit_user_agent: str = "vantage/0.1 (competitive intelligence research)"
 
     # ---- Service ------------------------------------------------------------
     frontend_origin: str = "http://localhost:5173"
