@@ -1,133 +1,823 @@
-import { ReportReader } from '../components/ReportReader'
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Check, History, Save, ShieldCheck, X } from 'lucide-react'
-import { applyCandidate, fetchVersion, fetchVersions, followup, restoreVersion, reviewReport, saveEdits, updateReport } from '../lib/api'
-import { loadDraft, saveDraft } from '../lib/drafts'
+import { useEffect, useState, useRef } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import {
+  Network,
+  Download,
+  BookOpen,
+  Quote,
+  Users,
+  Calendar,
+  Lightbulb,
+  Sparkles,
+  Link2,
+  FileText,
+  Database,
+  ShieldCheck,
+  Layers,
+  Image as ImageIcon,
+  ExternalLink,
+  Pencil,
+  Eye,
+  Highlighter,
+  Trash2,
+  BookmarkPlus,
+} from 'lucide-react'
 import { useReportStore } from '../store/reportStore'
-import { Badge, EvidenceCard, ItemView, UsageInfo } from '../components/Research'
-import { ReportReview } from '../components/ReportReview'
-import type { Content, Item, Report, Version, VersionMeta } from '../types'
+import { useAnnotationStore } from '../store/annotationStore'
+import type { HighlightColor } from '../store/annotationStore'
+import { stripCitations } from '../lib/selection'
+import type { SelectionHit } from '../lib/selection'
+import { VChart } from '../components/VChart'
+import { VClaimCard } from '../components/VClaimCard'
+import { VSentimentPanel } from '../components/VSentimentPanel'
+import { VEvidenceCard } from '../components/VEvidenceFeed'
+import { VEditableBlock, VCitedText } from '../components/VEditableBlock'
+import { VSelectionToolbar } from '../components/VSelectionToolbar'
+import { VMetricsPanel } from '../components/VMetricsPanel'
+import { VQualityGate } from '../components/VQualityGate'
+import { VAuditReview } from '../components/VAuditReview'
+import { VVerifyReport } from '../components/VVerifyReport'
+import { VReportToc } from '../components/VReportToc'
+import { VDataGrid } from '../components/VDataGrid'
+import VSidebar from '../layout/VSidebar'
+import VShellFallback from '../layout/VShellFallback'
+import { VFeatureMatrix, VPricingTable, VPersonaCards } from '../components/VStructured'
+import { refineSection, submitFeedback } from '../lib/api'
+import { VCountUp } from '../components/ui'
+import { formatDate, plural, truncate } from '../lib/format'
 
-const items = (c: Content) => [...c.comparison, ...c.brief, ...c.changes]
-function changedItems(base: Content, next: Content): { before?: Item; after?: Item }[] {
-  const before = new Map(items(base).map(i => [i.id, i])), after = new Map(items(next).map(i => [i.id, i]))
-  const signature = (i?: Item) => i ? JSON.stringify([i.text, i.citations, i.conditions, i.effective_date, i.depends_on, i.review.status, i.review.reason]) : ''
-  return [...new Set([...before.keys(), ...after.keys()])].filter(id => signature(before.get(id)) !== signature(after.get(id))).map(id => ({ before: before.get(id), after: after.get(id) }))
+const HL_DOT: Record<HighlightColor, string> = {
+  sun: 'bg-sun',
+  ok: 'bg-ok',
+  risk: 'bg-risk',
+  info: 'bg-info',
+}
+const HL_LABEL: Record<HighlightColor, string> = {
+  sun: 'Important',
+  ok: 'Agree',
+  risk: 'Questionable',
+  info: 'Follow up',
 }
 
-export default function ReportPage() {
-  const { reportId = '' } = useParams(), [params, setParams] = useSearchParams(), navigate = useNavigate()
-  const selectedId = params.get('version'), load = useReportStore(s => s.load), loadCards = useReportStore(s => s.loadCards), invalidate = useReportStore(s => s.invalidate)
-  const [report, setReport] = useState<Report | null>(null), [version, setVersion] = useState<Version | null>(null), [base, setBase] = useState<Version | null>(null), [versions, setVersions] = useState<VersionMeta[]>([])
-  const [edits, setEdits] = useState<Record<string, string>>({}), [annotation, setAnnotation] = useState<{ item: Item; selected: string } | null>(null), [question, setQuestion] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false)
-  const [editing, setEditing] = useState(false), [exitRequested, setExitRequested] = useState(false), [noteSaving, setNoteSaving] = useState(false)
-  useEffect(() => {
-    let active = true
-    void (async () => {
-      const r = await load(reportId)
-      const v = selectedId ? await fetchVersion(reportId, selectedId) : r.version
-      const history = await fetchVersions(reportId)
-      const b = v.state === 'candidate' && v.base_version_id ? await fetchVersion(reportId, v.base_version_id) : null
-      if (active) {
-        setReport(r); setVersion(v); setVersions(history); setBase(b)
-        const draft = v.version_id === r.current_version_id && v.state !== 'candidate' ? loadDraft(reportId, v.version_id) : {}
-        setEdits(draft); setEditing(Object.keys(draft).length > 0); setExitRequested(false); setAnnotation(null)
-      }
-      await loadCards()
-    })().catch(e => { if (active) setError(e.message) })
-    return () => { active = false }
-  }, [reportId, selectedId, load, loadCards])
-  if (!report || !version) return <div className="page">{error ? <p className="error" role="alert">{error}</p> : 'Loading comparison…'}<Link to="/library" className="text-button">Open history</Link></div>
+/** Sections that have no body text to deepen. */
+const NON_REFINABLE = ['sentiment', 'trace_note', 'figures']
 
-  const content = version.content, isCurrent = version.version_id === report.current_version_id, candidate = version.state === 'candidate'
-  const appliedCandidate = candidate ? versions.find(v => v.kind === 'apply' && v.metadata.candidate_version_id === version.version_id) : undefined
-  const dirty = Object.keys(edits).length > 0
-  const canModify = isCurrent && !candidate
-  const controlsBusy = busy || noteSaving
-  function edit(id: string, text: string) {
-    const original = items(content).find(i => i.id === id)?.text
-    setEdits(previous => {
-      const next = { ...previous }
-      if (text === original) delete next[id]; else next[id] = text
-      saveDraft(reportId, version!.version_id, next)
-      return next
+export default function ReportPage() {
+  const { reportId } = useParams()
+  const navigate = useNavigate()
+  const { current, loading, error, load } = useReportStore()
+  const [activeSection, setActiveSection] = useState<string>('')
+  const [readProgress, setReadProgress] = useState(0)
+  // The floating contents rail sits in the left gutter, which the cover image
+  // spans; it fades in once the reader has scrolled past it.
+  const [pastCover, setPastCover] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [highlightedEv, setHighlightedEv] = useState<string[]>([])
+  const [refiningSec, setRefiningSec] = useState<string>('')
+  const mainRef = useRef<HTMLElement>(null)
+  const articleRef = useRef<HTMLDivElement>(null)
+  const rid = reportId ?? ''
+  const { annotations, setEdit, getEdit, addHighlight, removeHighlight, addToKB } =
+    useAnnotationStore()
+  const reportHls = annotations[rid]?.highlights ?? []
+
+  const [toast, setToast] = useState('')
+  function flash(msg: string) {
+    setToast(msg)
+    window.setTimeout(() => setToast(''), 1800)
+  }
+
+  useEffect(() => {
+    if (reportId) load(reportId)
+  }, [reportId, load])
+
+  // Reading progress plus table-of-contents scroll-spy.
+  useEffect(() => {
+    const el = mainRef.current
+    if (!el || !current) return
+    const onScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el
+      const max = scrollHeight - clientHeight
+      setReadProgress(max > 0 ? Math.min(100, (scrollTop / max) * 100) : 0)
+      setPastCover(scrollTop > 180)
+      let cur = ''
+      for (const s of current.sections) {
+        const node = document.getElementById(`sec-${s.id}`)
+        if (
+          node &&
+          node.getBoundingClientRect().top - el.getBoundingClientRect().top <= 120
+        ) {
+          cur = s.id
+        }
+      }
+      if (cur) setActiveSection(cur)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [current])
+
+  function jumpTo(id: string) {
+    setActiveSection(id)
+    document
+      .getElementById(`sec-${id}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  /** Scroll to the marked passage itself, falling back to its section. */
+  function jumpToHighlight(id: string, sectionId: string) {
+    const mark = articleRef.current?.querySelector(`[data-highlight-id="${id}"]`)
+    if (mark) {
+      mark.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
+    jumpTo(sectionId)
+  }
+
+  function jumpToEvidence(ids: string[]) {
+    if (ids[0])
+      document
+        .getElementById(`ev-${ids[0]}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setHighlightedEv(ids)
+    window.setTimeout(() => setHighlightedEv([]), 2400)
+  }
+
+  /** Re-research one section against the reader's annotations. */
+  async function handleRefine(sectionId: string) {
+    if (!current) return
+    const notes = (annotations[rid]?.highlights ?? [])
+      .filter((h) => h.sectionId === sectionId)
+      .map((h) => {
+        // The stored text is the source slice; the citation markers in it are
+        // noise to a writer being asked to go deeper.
+        const quoted = stripCitations(h.text)
+        return h.comment
+          ? `${h.comment} (regarding: ${truncate(quoted, 60)})`
+          : `Go deeper on: ${truncate(quoted, 80)}`
+      })
+    if (notes.length === 0) {
+      flash('Highlight or annotate something in this section first')
+      return
+    }
+    setRefiningSec(sectionId)
+    flash('Deepening this section from your notes…')
+    const res = await refineSection(rid, sectionId, notes)
+    setRefiningSec('')
+    if (res.ok && res.section && res.report) {
+      // A server rewrite replaces this section's prose, including local drafts.
+      useAnnotationStore.getState().clearSectionEdits(rid, sectionId)
+      useReportStore.getState().replaceReport(res.report)
+      flash('Section updated')
+    } else {
+      flash(res.message || 'Could not deepen the section — try again')
+    }
+  }
+
+  function toggleEditMode() {
+    const leaving = editMode
+    setEditMode(!editMode)
+    if (leaving && current) {
+      // Leaving edit mode reports the real correction rate back to the server,
+      // which is what drives the human-correction metric.
+      const edits = annotations[rid]?.edits ?? {}
+      const editedBlocks = Object.keys(edits).length
+      const totalBlocks = current.sections.reduce(
+        (acc, s) => acc + (s.paragraphs?.length ?? 0) + (s.key_takeaway ? 1 : 0),
+        0,
+      )
+      if (editedBlocks > 0) {
+        void submitFeedback(rid, Math.min(editedBlocks, totalBlocks), totalBlocks, { edits }).then((res) => {
+          if (res.ok && res.report) {
+            useReportStore.getState().replaceReport(res.report)
+            flash(`Recorded ${Math.min(editedBlocks, totalBlocks)} of ${totalBlocks} blocks edited`)
+          } else flash('Could not record your feedback. Try again.')
+        })
+      }
+    }
+  }
+
+  /**
+   * A selection can span several paragraphs; each one gets its own anchored
+   * highlight so every part of it is actually marked in place.
+   */
+  function annotate(
+    hits: SelectionHit[],
+    text: string,
+    sectionId: string,
+    color: HighlightColor,
+    comment: string,
+  ) {
+    if (hits.length === 0) {
+      // Nothing anchorable under the cursor — a chart label, a table cell. Keep
+      // it as a note so it still reaches the sidebar and section refine, and say
+      // so rather than dropping a highlight that would never appear.
+      addHighlight(rid, { sectionId, text, color, comment })
+      flash('Saved as a note — this passage cannot be marked inline')
+      return
+    }
+    for (const h of hits) {
+      addHighlight(rid, {
+        sectionId: h.sectionId || sectionId,
+        blockId: h.blockId,
+        start: h.start,
+        end: h.end,
+        text: h.text,
+        color,
+        comment,
+      })
+    }
+  }
+
+  function handleHighlight(
+    hits: SelectionHit[],
+    text: string,
+    sectionId: string,
+    color: HighlightColor,
+  ) {
+    annotate(hits, text, sectionId, color, '')
+  }
+
+  function handleComment(hits: SelectionHit[], text: string, sectionId: string) {
+    const comment = window.prompt('Add a note:', '')
+    if (comment != null) annotate(hits, text, sectionId, 'info', comment.trim())
+  }
+
+  /**
+   * Highlights belonging to one block. Ones saved before anchoring existed carry
+   * no `blockId`, so they stay section-wide and are re-found by text search.
+   */
+  function highlightsFor(blockId: string, sectionId: string) {
+    return reportHls.filter((h) => (h.blockId ? h.blockId === blockId : h.sectionId === sectionId))
+  }
+
+  function handleSaveSelectionKB(sectionId: string, text: string) {
+    if (!current) return
+    const ok = addToKB({
+      reportId: rid,
+      reportTitle: current.title,
+      kind: 'note',
+      title: `Excerpt · ${sectionId}`,
+      content: text,
+      tags: current.brands ?? [],
     })
+    flash(ok ? 'Saved to your knowledge base' : 'Already saved')
   }
-  async function mutation(action: () => Promise<unknown>, clear = false) {
-    if (controlsBusy) return
-    setBusy(true); setError('')
-    try {
-      await action()
-      invalidate(reportId)
-      const r = await load(reportId)
-      const history = await fetchVersions(reportId)
-      await loadCards()
-      if (clear) saveDraft(reportId, version!.version_id, {})
-      setEdits({}); setEditing(false); setExitRequested(false)
-      setReport(r); setVersion(r.version); setBase(null); setVersions(history); setParams({})
-    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+
+  function saveClaimToKB(claimText: string, evidenceIds: string[]) {
+    if (!current) return
+    const ev = current.evidence.find((e) => e.evidence_id === evidenceIds[0])
+    const ok = addToKB({
+      reportId: rid,
+      reportTitle: current.title,
+      kind: 'claim',
+      title: 'Key claim',
+      content: claimText,
+      sourceUrl: ev?.source_url,
+      evidenceId: ev?.evidence_id,
+      tags: current.brands ?? [],
+    })
+    flash(ok ? 'Claim saved to your knowledge base' : 'Already saved')
   }
-  async function startFollowup() {
-    if (!annotation || !question.trim() || busy) return
-    setBusy(true); setError('')
-    try {
-      const task = await followup(reportId, version!.version_id, annotation.item.id, question, annotation.selected)
-      navigate('/workspace/' + task.task_id)
-    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+
+  // The same shell the route's Suspense boundary shows, so the chunk wait and
+  // the fetch wait are one continuous frame with the rail already in place.
+  if (loading) return <VShellFallback />
+  if (error || !current) {
+    // Inside the shell as well: a missing report is a dead end in the workspace,
+    // not a dead end out of it — the rail stays there to leave by.
+    return (
+      <div className="flex h-screen w-screen overflow-hidden bg-bg">
+        <VSidebar />
+        <main className="flex min-w-0 flex-1 flex-col items-center justify-center gap-3 text-ink-2">
+          <p>{error ?? 'Report not found.'}</p>
+          <button
+            onClick={() => navigate('/')}
+            className="h-10 rounded-btn bg-primary-deep px-5 text-aux font-medium text-white"
+          >
+            Back to start
+          </button>
+        </main>
+      </div>
+    )
   }
-  async function startReview() {
-    setBusy(true); setError('')
-    try { const t = await reviewReport(reportId, version!.version_id); navigate('/workspace/' + t.task_id) }
-    catch (e) { setError((e as Error).message) } finally { setBusy(false) }
-  }
-  function annotate(item: Item, selected: string) {
-    if (!canModify || editing || controlsBusy) return
-    if (dirty) { setError('Save or discard your edits before starting a follow-up. Your draft has been kept.'); return }
-    setQuestion(''); setAnnotation({ item, selected })
-  }
-  function changeMode(next: boolean) {
-    if (controlsBusy || !canModify) return
-    window.getSelection()?.removeAllRanges()
-    if (!next && dirty) { setExitRequested(true); return }
-    setEditing(next)
-  }
-  function discardEdits() {
-    saveDraft(reportId, version!.version_id, {})
-    setEdits({}); setEditing(false); setExitRequested(false)
-  }
-  async function rename() {
-    const title = window.prompt('Comparison title', report!.title)
-    if (!title?.trim()) return
-    try { const r = await updateReport(reportId, { title: title.trim() }); setReport(r); await loadCards() }
-    catch (e) { setError((e as Error).message) }
-  }
-  return <ReportReader key={version.version_id} reportId={reportId} versionId={version.version_id} content={content} canAnnotate={canModify && !busy && !exitRequested && !annotation} editing={editing} onError={setError} onFollowup={annotate} onSavingChange={setNoteSaving}><div className="page report-page">
-    <Link className="text-button" to="/library"><ArrowLeft size={14} />History</Link>
-    <div className="report-heading"><div><div className="eyebrow">{candidate ? appliedCandidate ? 'Applied candidate · Historical preview' : 'Candidate preview · Not applied' : isCurrent ? 'Current comparison' : 'Historical version'}</div><h1>{report.title}</h1><p className="muted text-sm">Checked {new Date(content.checked_at).toLocaleString('en-US')} · Changes since {content.changes_since}</p></div><button className="text-button" disabled={controlsBusy} onClick={() => void rename()}>Rename</button></div>
-    {content.is_mock && <div className="notice">[MOCK] Simulated report. Source notes and simulated review do not establish analytical conclusions.</div>}
-    {error && <div className="notice error" role="alert">{error}<button className="text-button" onClick={() => setError('')}>Dismiss</button></div>}
-    <div className="report-toolbar">
-      <label><History size={15} />Version<select disabled={controlsBusy} value={version.version_id} onChange={e => { if (dirty && !window.confirm('Keep your unsaved draft and switch versions?')) return; setParams(e.target.value === report.current_version_id ? {} : { version: e.target.value }) }}>{versions.map(v => <option key={v.version_id} value={v.version_id}>{v.state === 'candidate' ? 'Candidate' : v.version_id === report.current_version_id ? 'Current' : 'Saved'} · {v.kind} · {new Date(v.created_at).toLocaleString('en-US')}</option>)}</select></label>
-      {canModify ? <div className="report-mode" role="group" aria-label="Report mode"><button aria-pressed={!editing} disabled={controlsBusy} onClick={() => changeMode(false)}>Read only</button><button aria-pressed={editing} disabled={controlsBusy} onClick={() => changeMode(true)}>Edit</button></div> : <span className="muted text-sm">Read only</span>}
-      {canModify && !editing && <button className="button secondary" disabled={controlsBusy || dirty} onClick={() => void startReview()}><ShieldCheck size={15} />Review current report</button>}
-      {canModify && editing && <><button className="button primary" disabled={controlsBusy || !dirty} onClick={() => void mutation(() => saveEdits(reportId, version.version_id, edits), true)}><Save size={15} />{busy ? 'Saving…' : 'Save edits'}</button><button className="text-button" disabled={controlsBusy} onClick={discardEdits}>Discard edits</button></>}
+
+  const r = current
+  const evIndex = new Map(r.evidence.map((e, i) => [e.evidence_id, i + 1]))
+  const indepDomains = new Set(r.evidence.map((e) => e.domain).filter(Boolean)).size
+  const highConf = r.claims.filter((c) => c.confidence === 'high').length
+  const confRate = r.claims.length ? Math.round((highConf / r.claims.length) * 100) : 0
+  const metrics = [
+    { icon: FileText, label: 'Claims', value: r.claims.length, unit: '' },
+    { icon: Database, label: 'Sources', value: r.evidence.length, unit: '' },
+    { icon: Layers, label: 'Independent domains', value: indepDomains, unit: '' },
+    { icon: ShieldCheck, label: 'High confidence', value: confRate, unit: '%' },
+  ]
+
+  return (
+    <div className="flex h-screen w-screen overflow-hidden bg-bg">
+      {/* The same rail as the rest of the app: a report is a place inside the
+          workspace, not a detour out of it. The contents that used to live here
+          now float in the article's left gutter. */}
+      <VSidebar />
+
+      {/* Article */}
+      <main ref={mainRef} className="min-w-0 flex-1 overflow-y-auto">
+        <div className="sticky top-0 z-20 h-0.5 w-full bg-transparent">
+          <div
+            className="h-full bg-primary transition-all duration-150"
+            style={{ width: `${readProgress}%` }}
+          />
+        </div>
+
+        <div className="relative overflow-hidden">
+          {r.cover_image ? (
+            <img src={r.cover_image} alt="" className="h-60 w-full object-cover" />
+          ) : (
+            <div className="h-60 w-full bg-gradient-to-br from-primary to-primary-deep" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-ink/70 via-ink/20 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-6 p-8">
+            <div className="min-w-0">
+              <motion.h1
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="font-serif text-[32px] leading-tight text-white"
+              >
+                {r.title}
+              </motion.h1>
+              <p className="mt-2 max-w-2xl text-aux text-white/85">{r.subtitle}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-4 text-tag text-white/75">
+                <span className="inline-flex items-center gap-1">
+                  <Calendar size={13} /> {formatDate(r.created_at)}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Users size={13} /> {plural(r.experts.length, 'analyst')}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Quote size={13} /> {plural(r.claims.length, 'claim')} ·{' '}
+                  {plural(r.evidence.length, 'source')}
+                </span>
+              </div>
+            </div>
+            {/* Opposite corner from Saved / Trace / Edit / Export, so the title
+                bar carries the report's actions at both ends. */}
+            <button
+              onClick={() => navigate(`/graph/${r.id}`)}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-btn bg-card/90 px-3 text-aux font-medium text-ink-2 backdrop-blur transition-colors hover:text-primary-deep"
+            >
+              <Network size={15} /> Evidence graph
+            </button>
+          </div>
+          <div className="absolute right-6 top-6 flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={() => navigate('/knowledge')}
+              className="inline-flex h-9 items-center gap-1.5 rounded-btn bg-card/90 px-3 text-aux font-medium text-ink-2 backdrop-blur hover:text-primary-deep"
+            >
+              <BookOpen size={15} /> Saved
+            </button>
+            {r.trace && r.trace.length > 0 && (
+              <button
+                onClick={() => navigate(`/trace/${r.id}`)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-btn bg-card/90 px-3 text-aux font-medium text-ink-2 backdrop-blur hover:text-primary-deep"
+              >
+                <Network size={15} /> Trace
+              </button>
+            )}
+            <button
+              onClick={toggleEditMode}
+              className={`inline-flex h-9 items-center gap-1.5 rounded-btn px-3 text-aux font-medium backdrop-blur ${
+                editMode
+                  ? 'bg-primary-deep text-white'
+                  : 'bg-card/90 text-ink-2 hover:text-primary-deep'
+              }`}
+            >
+              {editMode ? (
+                <>
+                  <Eye size={15} /> Read
+                </>
+              ) : (
+                <>
+                  <Pencil size={15} /> Edit
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="inline-flex h-9 items-center gap-1.5 rounded-btn bg-card/90 px-3 text-aux font-medium text-ink-2 backdrop-blur hover:text-primary-deep"
+            >
+              <Download size={15} /> Export
+            </button>
+          </div>
+        </div>
+
+        <div className="border-b border-line bg-card/60">
+          <div className="mx-auto grid max-w-article grid-cols-2 gap-px px-6 sm:grid-cols-4">
+            {metrics.map((m, i) => (
+              <div key={i} className="flex flex-col items-center gap-1 py-5 text-center">
+                <m.icon size={16} className="text-primary" />
+                <div className="flex items-baseline gap-0.5">
+                  <VCountUp
+                    value={m.value}
+                    className="font-serif text-[26px] leading-none text-ink"
+                  />
+                  {m.unit && <span className="text-tag text-ink-3">{m.unit}</span>}
+                </div>
+                <span className="text-tag leading-tight text-ink-3">{m.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* The report's white space lives in three places: `max-w-article`
+            (the reading column, defined once in tailwind.config.js and shared
+            with the metrics band above), `px-6` (the gutter beside the text)
+            and `py-10` (the space above the first section and below the last). */}
+        <article ref={articleRef} className="relative mx-auto max-w-article px-6 py-10">
+          <VSelectionToolbar
+            containerRef={articleRef}
+            enabled
+            onHighlight={handleHighlight}
+            onComment={handleComment}
+            onSaveKB={handleSaveSelectionKB}
+          />
+
+          <VMetricsPanel metrics={r.metrics} />
+          <VAuditReview review={r.audit_review} />
+          <VVerifyReport review={r.verify_review} />
+          <VQualityGate before={r.quality_before} after={r.quality_after} />
+
+          {r.sections.map((sec, idx) => (
+            <section
+              key={sec.id}
+              id={`sec-${sec.id}`}
+              data-section-id={sec.id}
+              className="mb-12 scroll-mt-6"
+            >
+              <div className="flex items-start gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-card bg-primary-tint font-serif text-[18px] font-semibold text-primary-deep">
+                  {idx + 1}
+                </span>
+                <h2 className="font-serif text-h2 text-ink">{sec.title}</h2>
+                {sec.rewritten && (
+                  <span
+                    title="Verification found a defect in the first draft; this section was rewritten against the same evidence."
+                    className="mt-1.5 shrink-0 rounded-chip bg-primary-tint px-2 py-0.5 text-tag font-medium text-primary-deep"
+                  >
+                    Rewritten after verification
+                  </span>
+                )}
+              </div>
+
+              {sec.key_takeaway && (
+                <div className="mt-3 flex gap-3 rounded-card border-l-[3px] border-primary bg-primary-tint/40 p-4">
+                  <Lightbulb size={18} className="mt-0.5 shrink-0 text-primary-deep" />
+                  <VEditableBlock
+                    as="p"
+                    blockId={`${sec.id}-takeaway`}
+                    value={getEdit(rid, `${sec.id}-takeaway`) ?? sec.key_takeaway}
+                    editable={editMode}
+                    onSave={(t) => setEdit(rid, `${sec.id}-takeaway`, t)}
+                    className="text-body font-medium text-ink"
+                    highlights={highlightsFor(`${sec.id}-takeaway`, sec.id)}
+                    evIndex={evIndex}
+                    onCite={jumpToEvidence}
+                  />
+                </div>
+              )}
+
+              <div className="mt-4 space-y-3">
+                {sec.paragraphs?.map((p, i) => (
+                  <VEditableBlock
+                    key={i}
+                    as="p"
+                    blockId={`${sec.id}-p${i}`}
+                    value={getEdit(rid, `${sec.id}-p${i}`) ?? p}
+                    editable={editMode}
+                    onSave={(t) => setEdit(rid, `${sec.id}-p${i}`, t)}
+                    className="text-body leading-relaxed text-ink-2"
+                    highlights={highlightsFor(`${sec.id}-p${i}`, sec.id)}
+                    evIndex={evIndex}
+                    onCite={jumpToEvidence}
+                  />
+                ))}
+              </div>
+
+              {sec.highlights && sec.highlights.length > 0 && (
+                <ul className="mt-4 space-y-2 rounded-card bg-card/60 p-4">
+                  {sec.highlights.map((h, i) => (
+                    <li key={i} className="flex gap-2 text-aux text-ink-2">
+                      <Sparkles size={15} className="mt-0.5 shrink-0 text-warn-deep" />
+                      <span>
+                        <VCitedText
+                          text={h}
+                          evIndex={evIndex}
+                          onCite={jumpToEvidence}
+                          blockId={`${sec.id}-h${i}`}
+                          highlights={highlightsFor(`${sec.id}-h${i}`, sec.id)}
+                        />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {sec.claims && sec.claims.length > 0 && (
+                <div className="mt-5 space-y-3">
+                  {sec.claims.map((c) => (
+                    <div key={c.claim_id} className="group/claim relative">
+                      <VClaimCard
+                        claim={c}
+                        onCite={jumpToEvidence}
+                        blockId={`${sec.id}-claim-${c.claim_id}`}
+                        highlights={highlightsFor(`${sec.id}-claim-${c.claim_id}`, sec.id)}
+                      />
+                      <button
+                        onClick={() => saveClaimToKB(c.text, c.evidence_ids)}
+                        title="Save to knowledge base"
+                        aria-label="Save claim to knowledge base"
+                        className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-btn bg-card/80 text-ink-3 opacity-0 backdrop-blur transition-opacity hover:text-primary-deep group-hover/claim:opacity-100"
+                      >
+                        <BookmarkPlus size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {sec.charts && sec.charts.length > 0 && (
+                <div className="mt-5 grid grid-cols-1 gap-4">
+                  {sec.charts.map((c) => (
+                    <VChart key={c.chart_id} spec={c} onCite={jumpToEvidence} />
+                  ))}
+                </div>
+              )}
+
+              {sec.structured?.type === 'feature_tree' && (
+                <VFeatureMatrix data={sec.structured.data} />
+              )}
+              {sec.structured?.type === 'pricing_model' && (
+                <VPricingTable data={sec.structured.data} />
+              )}
+              {sec.structured?.type === 'user_persona' && (
+                <VPersonaCards data={sec.structured.data} />
+              )}
+
+              {sec.data_grid && (
+                <VDataGrid grid={sec.data_grid} title={`${sec.title} · data`} />
+              )}
+
+              {sec.id === 'sentiment' && r.sentiment && (
+                <div className="mt-5">
+                  <VSentimentPanel sentiment={r.sentiment} />
+                </div>
+              )}
+
+              {sec.source_evidence_ids && sec.source_evidence_ids.length > 0 && (
+                <div className="mt-5 flex flex-wrap items-center gap-1.5 border-t border-line/60 pt-3">
+                  <span className="inline-flex items-center gap-1 text-tag text-ink-3">
+                    <Link2 size={13} /> Sources for this section
+                  </span>
+                  {sec.source_evidence_ids.map((id) => (
+                    <button
+                      key={id}
+                      onClick={() => jumpToEvidence([id])}
+                      className="rounded-chip bg-primary-tint px-2 py-0.5 text-tag font-medium text-primary-deep hover:bg-primary-soft/40"
+                      title="Jump to this source"
+                    >
+                      [{evIndex.get(id) ?? '?'}]
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {!NON_REFINABLE.includes(sec.id) && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => handleRefine(sec.id)}
+                    disabled={refiningSec === sec.id}
+                    className="inline-flex items-center gap-1.5 rounded-btn border border-primary-soft bg-primary-tint/50 px-3 py-1.5 text-tag font-medium text-primary-deep hover:bg-primary-tint disabled:opacity-50"
+                  >
+                    <Sparkles size={13} />
+                    {refiningSec === sec.id ? 'Working…' : 'Deepen from my notes'}
+                  </button>
+                  {sec.refined && (
+                    <span className="rounded-chip bg-ok/10 px-2 py-0.5 text-tag text-ok-deep">
+                      Updated
+                    </span>
+                  )}
+                  <span className="text-tag text-ink-3">
+                    Highlight a passage and add a note first
+                  </span>
+                </div>
+              )}
+            </section>
+          ))}
+
+          {r.figures && r.figures.length > 0 && (
+            <section id="sec-figures" className="mb-12 scroll-mt-6">
+              <div className="flex items-start gap-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-card bg-primary-tint font-serif text-[18px] font-semibold text-primary-deep">
+                  <ImageIcon size={18} />
+                </span>
+                <h2 className="font-serif text-h2 text-ink">Collected imagery</h2>
+              </div>
+              <p className="mt-3 text-aux text-ink-2">
+                Captured from the pages visited during research — vendor sites, press
+                and community posts. Every image links back to the page it came from.
+              </p>
+              <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {r.figures.map((f, i) => (
+                  <div
+                    key={i}
+                    className="group relative overflow-hidden rounded-card border border-line bg-card transition-shadow hover:shadow-md"
+                  >
+                    <a
+                      href={f.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open the source page"
+                    >
+                      <div className="relative aspect-[16/9] overflow-hidden bg-primary-tint/30">
+                        <img
+                          src={f.src}
+                          alt={f.alt || f.title || ''}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                          onError={(e) => {
+                            const wrap = (e.target as HTMLImageElement).closest(
+                              '.group',
+                            ) as HTMLElement | null
+                            if (wrap) wrap.style.display = 'none'
+                          }}
+                        />
+                        {f.brand && (
+                          <span className="absolute left-2 top-2 rounded-chip bg-ink/70 px-2 py-0.5 text-tag font-medium text-white backdrop-blur">
+                            {f.brand}
+                          </span>
+                        )}
+                      </div>
+                    </a>
+                    <button
+                      onClick={() => {
+                        const ok = addToKB({
+                          reportId: rid,
+                          reportTitle: r.title,
+                          kind: 'figure',
+                          title: f.title || 'Collected image',
+                          content: f.alt || f.title || 'Collected image',
+                          sourceUrl: f.source_url,
+                          imageSrc: f.src,
+                          brand: f.brand,
+                          tags: f.brand ? [f.brand] : [],
+                        })
+                        flash(ok ? 'Image saved' : 'Already saved')
+                      }}
+                      title="Save to knowledge base"
+                      aria-label="Save image to knowledge base"
+                      className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-btn bg-card/85 text-ink-3 opacity-0 backdrop-blur transition-opacity hover:text-primary-deep group-hover:opacity-100"
+                    >
+                      <BookmarkPlus size={14} />
+                    </button>
+                    <a
+                      href={f.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between gap-2 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-aux font-medium text-ink">
+                          {f.title || f.alt || 'Collected image'}
+                        </div>
+                        <div className="truncate text-tag text-ink-3">
+                          {f.domain || f.source_url}
+                        </div>
+                      </div>
+                      <ExternalLink
+                        size={14}
+                        className="shrink-0 text-ink-3 group-hover:text-primary-deep"
+                      />
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </article>
+      </main>
+
+      {/* Sources and notes. `w-[380px]` is the panel's width; `xl:flex` is the
+          breakpoint below which it is dropped entirely rather than squeezing the
+          article — raise the width and you may want `2xl:flex` with it. */}
+      <aside className="hidden w-[380px] shrink-0 flex-col border-l border-line bg-card/50 xl:flex">
+        <div className="flex h-14 items-center gap-2 border-b border-line px-5">
+          <BookOpen size={16} className="text-primary" />
+          <span className="text-aux font-semibold text-ink">Sources &amp; notes</span>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="mb-2 flex items-center gap-1.5 text-tag font-semibold text-ink-3">
+            <Highlighter size={13} /> My notes ({reportHls.length})
+          </div>
+          {reportHls.length === 0 ? (
+            <p className="mb-5 rounded-card border border-dashed border-line bg-bg/60 p-3 text-tag leading-relaxed text-ink-3">
+              Select any passage to highlight it, add a note, or save it. Use Edit to
+              correct the text directly.
+            </p>
+          ) : (
+            <div className="mb-5 flex flex-col gap-2">
+              {reportHls.map((h) => (
+                <div
+                  key={h.id}
+                  className="group rounded-card border border-line/60 bg-bg p-2.5"
+                >
+                  <div className="flex items-start gap-2">
+                    <span
+                      className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${HL_DOT[h.color]}`}
+                    />
+                    <button
+                      onClick={() => jumpToHighlight(h.id, h.sectionId)}
+                      className="flex-1 text-left text-tag leading-relaxed text-ink-2 hover:text-primary-deep"
+                    >
+                      <span className="line-clamp-3">{stripCitations(h.text)}</span>
+                    </button>
+                    <button
+                      onClick={() => removeHighlight(rid, h.id)}
+                      className="shrink-0 text-ink-3 opacity-0 transition-opacity hover:text-risk-deep group-hover:opacity-100"
+                      title="Delete note"
+                      aria-label="Delete note"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-1.5 pl-4.5">
+                    <span className="rounded-chip bg-line/60 px-1.5 py-0.5 text-[10px] font-medium text-ink-3">
+                      {HL_LABEL[h.color]}
+                    </span>
+                    {h.comment && (
+                      <span className="line-clamp-1 text-[11px] italic text-ink-3">
+                        “{h.comment}”
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mb-3 text-tag font-semibold text-ink-3">
+            Sources ({r.evidence.length})
+          </div>
+          <div className="flex flex-col gap-2.5">
+            {r.evidence.map((ev, i) => (
+              <VEvidenceCard
+                key={ev.evidence_id}
+                ev={ev}
+                index={i}
+                highlighted={highlightedEv.includes(ev.evidence_id)}
+              />
+            ))}
+          </div>
+
+          {r.glossary.length > 0 && (
+            <>
+              <div className="mb-3 mt-6 text-tag font-semibold text-ink-3">Glossary</div>
+              <div className="flex flex-col gap-2.5">
+                {r.glossary.map((g, i) => (
+                  <div key={i} className="rounded-card border border-line/60 bg-bg p-3">
+                    <div className="text-aux font-semibold text-ink">{g.term}</div>
+                    <p className="mt-1 text-tag leading-relaxed text-ink-2">
+                      {g.definition}
+                    </p>
+                    {g.source && (
+                      <div className="mt-1 text-tag text-primary-deep">— {g.source}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </aside>
+
+      <VReportToc
+        items={r.toc}
+        activeId={activeSection}
+        progress={readProgress}
+        visible={pastCover}
+        onJump={jumpTo}
+        containerRef={mainRef}
+        articleRef={articleRef}
+      />
+
+      {toast && (
+        <div className="pointer-events-none fixed bottom-8 left-1/2 z-50 -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-card bg-ink/90 px-4 py-2.5 text-aux font-medium text-white shadow-float backdrop-blur">
+            <BookmarkPlus size={15} /> {toast}
+          </div>
+        </div>
+      )}
     </div>
-    {dirty && <p className="notice">Unsaved draft. Saving marks edited content and dependent judgments as Pending review.</p>}
-    {candidate && <section className="panel candidate-banner"><div className="eyebrow">{appliedCandidate ? 'Candidate application recorded' : 'Review before applying'}</div><h2>{version.metadata.question || 'Review candidate'}</h2><p>{appliedCandidate ? 'This candidate was applied on ' + new Date(appliedCandidate.created_at).toLocaleString('en-US') + '. This preview retains the original research snapshot.' : 'This candidate was researched from version ' + version.base_version_id + '. Applying it is a separate action.'}</p>{!appliedCandidate && version.base_version_id !== report.current_version_id && <p className="error">The current version has changed since this task began. This candidate cannot overwrite those edits; start a new follow-up from the current version.</p>}<div className="button-row">{!appliedCandidate && <button className="button primary" disabled={busy || version.base_version_id !== report.current_version_id} onClick={() => void mutation(() => applyCandidate(reportId, report.current_version_id, version.version_id))}><Check size={15} />Apply candidate</button>}<button className="button secondary" onClick={() => setParams({})}>Return to current report</button></div>
-      {base && <div className="candidate-diffs">{changedItems(base.content, content).map((d, index) => <div className="diff-row" key={index}><div><span className="eyebrow">Before</span><p>{d.before?.text || 'New item'}</p>{d.before && <Badge status={d.before.review.status} />}</div><div><span className="eyebrow">After</span><p>{d.after?.text || 'Removed item'}</p>{d.after && <Badge status={d.after.review.status} />}</div></div>)}{!changedItems(base.content, content).length && <p className="muted">No content changes. Review results and new source material are retained in this candidate.</p>}</div>}
-      {base && <section className="candidate-sources"><h3>Newly collected sources</h3>{content.evidence.filter(e => !base.content.evidence.some(old => old.evidence_id === e.evidence_id)).map(e => <EvidenceCard key={e.evidence_id} evidence={e} />)}</section>}
-    </section>}
-    {!candidate && !isCurrent && <section className="notice"><p>You are viewing a historical version. Restoring creates a new current version and retains all history.</p><button className="button secondary" disabled={busy} onClick={() => void mutation(() => restoreVersion(reportId, report.current_version_id, version.version_id))}>Restore this version</button><button className="text-button" onClick={() => setParams({})}>Return to current</button></section>}
-    <section className="panel review-summary"><div><h2>Review summary</h2><p className="muted">{content.review_summary.meaning || 'Review status is shown for each fact and key conclusion.'}</p></div><div className="review-counts">{(['supported', 'unknown', 'conflicting', 'pending_review'] as const).map(s => <div key={s}><strong>{content.review_summary.counts?.[s] || 0}</strong><Badge status={s} /></div>)}</div><UsageInfo usage={content.review_summary.usage} />{content.review_summary.run_limitation && <p className="notice">{content.review_summary.run_limitation}</p>}</section>
-    <nav className="report-toc" aria-label="Report contents"><a href="#comparison">Comparison</a><a href="#brief">Short brief</a><a href="#changes">Recent changes</a><a href="#review">Review & limitations</a></nav>
-    <section id="comparison"><div className="section-heading"><h2>Product comparison</h2><span className="muted text-sm">Sources and status on every item</span></div><div className="comparison-wrap"><table className="comparison-table"><thead><tr><th scope="col">Topic</th>{content.products.map(p => <th scope="col" key={p.id}><a href={p.website} target="_blank" rel="noreferrer">{p.name}</a>{p.own_product && <small>Your product</small>}<small>{p.category}</small></th>)}</tr></thead><tbody>{content.topics.map(t => <tr key={t.id}><th scope="row">{t.name}{t.focus.map(f => <small key={f}>{f}</small>)}</th>{content.products.map(p => <td key={p.id}>{content.comparison.filter(i => i.product_id === p.id && i.topic_id === t.id).map(i => <ItemView key={i.id} item={i} edit={edits[i.id]} onEdit={edit} editing={canModify && editing} disabled={controlsBusy || exitRequested} />)}</td>)}</tr>)}</tbody></table></div></section>
-    <section id="brief" className="report-section"><div className="eyebrow">Key differences & conditions</div><h2>Short brief</h2>{content.brief.map(i => <ItemView key={i.id} item={i} edit={edits[i.id]} onEdit={edit} editing={canModify && editing} disabled={controlsBusy || exitRequested} />)}{!content.brief.length && <p className="muted">No sufficiently supported brief conclusions were produced.</p>}</section>
-    <section id="changes" className="report-section"><div className="eyebrow">Last 90 days</div><h2>Recent changes</h2>{content.changes.map(i => <ItemView key={i.id} item={i} edit={edits[i.id]} onEdit={edit} editing={canModify && editing} disabled={controlsBusy || exitRequested} />)}{!content.changes.length && <p className="muted">No relevant public changes found. This does not establish that no changes occurred.</p>}</section>
-    {content.charts.length > 0 && <section className="report-section"><h2>Comparable sourced data</h2>{content.charts.map(chart => <div className="panel sourced-chart" key={chart.id}><p className="muted text-sm">{Object.entries(chart.conditions).map(([k, v]) => k + ': ' + v).join(' · ')}</p>{chart.points.map(point => <div className="chart-point" key={point.item_id}><a href={'#item-' + point.item_id}>{content.products.find(p => p.id === point.product_id)?.name}</a><div className="bar-track"><div style={{ width: (point.value / Math.max(1, ...chart.points.map(p => p.value)) * 100) + '%' }} /></div><span>{point.value}</span></div>)}<p className="muted text-sm">Checked {new Date(chart.checked_at).toLocaleDateString('en-US')}. Each bar links to its reviewed fact and sources.</p></div>)}</section>}
-    <ReportReview content={content} />
-    {(version.task_id || version.metadata.source_task_id) && <Link className="text-button" to={'/workspace/' + (version.task_id || version.metadata.source_task_id) + '?inspect=1'}>Task progress and diagnostics</Link>}
-    {exitRequested && <div className="modal-backdrop"><section className="panel annotation-modal" role="dialog" aria-modal="true" aria-labelledby="exit-edit-heading" onKeyDown={e => { if (e.key === 'Escape' && !busy) setExitRequested(false) }}><h2 id="exit-edit-heading">Save your edits?</h2><p>Save your changes before returning to read only, or discard them.</p>{error && <p className="notice error" role="alert">{error}</p>}<div className="button-row"><button className="button primary" disabled={controlsBusy} onClick={() => void mutation(() => saveEdits(reportId, version.version_id, edits), true)}>{busy ? 'Saving…' : 'Save and exit'}</button><button className="button secondary" disabled={controlsBusy} onClick={discardEdits}>Discard and exit</button><button autoFocus className="text-button" disabled={controlsBusy} onClick={() => setExitRequested(false)}>Continue editing</button></div></section></div>}
-    {annotation && <div className="modal-backdrop"><section className="panel annotation-modal" role="dialog" aria-modal="true" aria-labelledby="followup-heading"><div className="section-heading"><h2 id="followup-heading">Follow up with new evidence</h2><button className="icon-button" aria-label="Close follow-up" onClick={() => setAnnotation(null)}><X size={18} /></button></div><blockquote>{annotation.selected || annotation.item.text}</blockquote><p className="muted text-sm">Base version: {version.version_id}. This creates a candidate for your review.</p><label>What should we check?<textarea autoFocus rows={4} value={question} maxLength={4000} onChange={e => setQuestion(e.target.value)} placeholder="Is this price for annual billing? Check the current vendor pricing page." /></label><div className="button-row"><button className="button primary" disabled={busy || !question.trim()} onClick={() => void startFollowup()}>Start targeted follow-up</button><button className="button secondary" onClick={() => setAnnotation(null)}>Cancel</button></div></section></div>}
-  </div></ReportReader>
+  )
 }

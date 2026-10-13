@@ -10,7 +10,6 @@ from typing import Optional
 import httpx
 
 from app.core.config import get_settings
-from app.core import budget
 from app.core.search.base import Freshness, SearchUnavailable, now_iso
 
 ENDPOINT = "https://api.tavily.com/search"
@@ -54,9 +53,6 @@ def search(
         payload["time_range"] = time_range
 
     timeout = httpx.Timeout(connect=8, read=settings.search_timeout, write=5, pool=5)
-    current = budget.CURRENT.get()
-    if current:
-        timeout = min(settings.search_timeout, current.check())
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True) as client:
             r = client.post(
@@ -94,8 +90,7 @@ def search(
                 "url": url,
                 "snippet": content[:500],
                 "source": _domain(url),
-                "captured_at": now_iso(),
-                "published_at": item.get("published_date"),
+                "captured_at": item.get("published_date") or now_iso(),
                 "content": content or None,
             }
         )

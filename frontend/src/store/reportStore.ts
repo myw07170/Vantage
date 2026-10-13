@@ -1,14 +1,109 @@
 import { create } from 'zustand'
 import type { Report, ReportCard } from '../types'
 import { fetchReport, fetchReports } from '../lib/api'
-interface State {
-  cards: ReportCard[]; reports: Record<string, Report>
-  loadCards: () => Promise<void>; load: (id: string) => Promise<Report>; invalidate: (id: string) => void
+
+interface ReportState {
+  cache: Record<string, Report>
+  current: Report | null
+  loading: boolean
+  error: string | null
+  load: (id: string) => Promise<void>
+  replaceReport: (report: Report) => void
+
+  /** The report list, shared by the sidebar and the library so a delete in one
+   *  is reflected in the other. Held in a store rather than in each view's own
+   *  state: the sidebar outlives the library, so a locally-filtered list there
+   *  would leave a phantom entry in the sidebar pointing at a deleted report. */
+  cards: ReportCard[]
+  cardsLoading: boolean
+  loadCards: () => Promise<void>
+  removeCard: (id: string) => void
+  patchCard: (id: string, patch: Partial<Pick<ReportCard, 'title' | 'starred'>>) => void
 }
-export const useReportStore = create<State>((set) => ({
-  cards: [], reports: {},
-  loadCards: async () => { const cards = await fetchReports(); set({ cards }) },
-  // Always fetch the current pointer; an old cached version must never hide a conflict.
-  load: async id => { const report = await fetchReport(id); set(s => ({ reports: { ...s.reports, [id]: report } })); return report },
-  invalidate: id => set(s => ({ reports: Object.fromEntries(Object.entries(s.reports).filter(([key]) => key !== id)) })),
+
+/** The sidebar and the library both mount at once and both want the list; this
+ *  shares the request instead of firing it twice. */
+let cardsInFlight: Promise<void> | null = null
+
+export const useReportStore = create<ReportState>((set, get) => ({
+  cache: {},
+  current: null,
+  loading: false,
+  error: null,
+  replaceReport: (report) => set((s) => ({
+    current: s.current?.id === report.id ? report : s.current,
+    cache: { ...s.cache, [report.id]: report },
+    cards: s.cards.map((card) => card.id === report.id ? {
+      ...card, title: report.title, subtitle: report.subtitle,
+      evidence_count: report.evidence.length, claim_count: report.claims.length,
+      high_conf_count: report.claims.filter((c) => c.confidence === 'high').length,
+    } : card),
+  })),
+  load: async (id) => {
+    const cached = get().cache[id]
+    if (cached) {
+      set({ current: cached, error: null })
+      return
+    }
+    set({ loading: true, error: null, current: null })
+    try {
+      const report = await fetchReport(id)
+      if (report && report.id) {
+        set((s) => ({
+          current: report,
+          loading: false,
+          cache: { ...s.cache, [id]: report },
+        }))
+      } else {
+        set({ loading: false, error: 'This report does not exist or has expired.' })
+      }
+    } catch {
+      set({ loading: false, error: 'Could not load the report.' })
+    }
+  },
+
+  cards: [],
+  // True only while there is nothing to show yet. A refetch behind an existing
+  // list must not blank it — the sidebar refetches every time the shell
+  // remounts, and swapping the list for skeletons each time would flicker.
+  cardsLoading: true,
+  loadCards: () => {
+    if (cardsInFlight) return cardsInFlight
+    cardsInFlight = fetchReports()
+      .then((cards) => set({ cards }))
+      .finally(() => {
+        set({ cardsLoading: false })
+        cardsInFlight = null
+      })
+    return cardsInFlight
+  },
+  // Applied locally after the server has accepted the change, so the sidebar,
+  // the library and an already-open report all move together. The cached detail
+  // and `current` carry the title too — patching only the card would leave the
+  // report page showing the old heading until the cache was dropped.
+  patchCard: (id, patch) =>
+    set((s) => {
+      const cached = s.cache[id]
+      const renamed = patch.title !== undefined
+      return {
+        cards: s.cards.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        cache:
+          renamed && cached
+            ? { ...s.cache, [id]: { ...cached, title: patch.title as string } }
+            : s.cache,
+        current:
+          renamed && s.current?.id === id
+            ? { ...s.current, title: patch.title as string }
+            : s.current,
+      }
+    }),
+
+  removeCard: (id) =>
+    set((s) => ({
+      cards: s.cards.filter((c) => c.id !== id),
+      // Drop the detail cache too, or reopening the id would serve the deleted
+      // report from memory instead of reporting it gone.
+      cache: Object.fromEntries(Object.entries(s.cache).filter(([k]) => k !== id)),
+      current: s.current?.id === id ? null : s.current,
+    })),
 }))

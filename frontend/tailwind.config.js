@@ -71,7 +71,6 @@ const palette = {
 }
 
 export default {
-  safelist: ['hl-sun', 'hl-ok', 'hl-risk', 'hl-info', 'accent-blue', 'accent-violet', 'accent-orchid', 'accent-pink', 'flow-done', 'flow-working', 'kind-handoff', 'source-active'],
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {

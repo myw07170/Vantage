@@ -27,7 +27,6 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Dict, Optional
-from app.core import budget
 
 # Preserve the local daily accounting boundary (fixed UTC-08:00).
 _PACIFIC = _dt.timezone(_dt.timedelta(hours=-8))
@@ -160,8 +159,7 @@ class RateLimiter:
         sem = self._sem
         my_turn = None
         if sem is not None:
-            while not sem.acquire(timeout=0.1):
-                budget.check()
+            sem.acquire()
         try:
             with self._cond:
                 bucket = self._buckets.get(tier)
@@ -171,7 +169,6 @@ class RateLimiter:
                 my_turn = self._ticket
                 self._waiting.append(my_turn)
                 while True:
-                    budget.check()
                     now = time.monotonic()
                     bucket._roll_day()
                     if bucket.rpd_limit > 0 and bucket.rpd_used >= bucket.rpd_limit:
@@ -196,8 +193,7 @@ class RateLimiter:
                         bucket.rpm.retry_after(now, 1),
                         bucket.tpm.retry_after(now, max(1, est_tokens)),
                     )
-                    current = budget.CURRENT.get()
-                    self._cond.wait(timeout=min(max(0.05, min(wait, 5.0)), current.check() if current else 5.0))
+                    self._cond.wait(timeout=max(0.05, min(wait, 5.0)))
         except BaseException:
             # A failed daily-budget acquisition must not leave a FIFO hole
             # that blocks later callers on another, still-available model.

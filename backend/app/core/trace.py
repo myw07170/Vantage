@@ -8,9 +8,9 @@ thread. So a contextvar set on the async side before the hop is visible to the
 nested synchronous `llm.chat()` running in that thread. That is how a span
 learns which agent and stage it belongs to without any call site passing it.
 
-Flow: `chat()` records a span for each completed or failed attempt. Pipeline
-checkpoints persist trimmed diagnostic records; the workspace fetches them
-through the task trace endpoint. SSE carries progress and artifact events.
+Flow: `chat()` records a span automatically → the pipeline calls `drain()` at
+each stage boundary and pushes the new spans over SSE → a trimmed copy is
+persisted with the report for the "decision replay" view.
 
 Buffers are in-memory, so this is single-process by design.
 """

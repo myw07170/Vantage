@@ -10,7 +10,6 @@ from typing import Optional
 import httpx
 
 from app.core.config import get_settings
-from app.core import budget
 from app.core.search.base import Freshness, SearchUnavailable, now_iso
 
 ENDPOINT = "https://api.exa.ai/search"
@@ -47,9 +46,6 @@ def search(
         payload["startPublishedDate"] = start
 
     timeout = httpx.Timeout(connect=8, read=settings.search_timeout, write=5, pool=5)
-    current = budget.CURRENT.get()
-    if current:
-        timeout = min(settings.search_timeout, current.check())
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True) as client:
             r = client.post(
@@ -89,8 +85,7 @@ def search(
                 # prompts and hand the full body to the collector separately.
                 "snippet": text[:500],
                 "source": item.get("author") or _domain(url),
-                "captured_at": now_iso(),
-                "published_at": item.get("publishedDate"),
+                "captured_at": item.get("publishedDate") or now_iso(),
                 "content": text or None,
             }
         )

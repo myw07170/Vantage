@@ -1,129 +1,245 @@
-# Vantage architecture (schema v3)
+# Architecture
 
-React 19, TypeScript, Vite, Tailwind and Zustand connect to one FastAPI process.
-SQLite uses WAL, thread-local connections and serialized writes. The original
-Vantage palette, fonts, centered composer, report/source columns and full-screen
-research workspace frame the newer evidence and version contracts.
+## Three pieces
 
-## Explicit scope preparation
+| Directory | Role |
+|---|---|
+| `frontend/` | React 19 SPA. Talks to the backend over REST plus one SSE stream. |
+| `backend/` | FastAPI. Orchestration, collection, model calls, credibility scoring, trace, SQLite. |
+| `scripts/` | Smoke tests and the headless pipeline harness. |
 
-POST /api/tasks creates a draft without model calls. POST /tasks/{id}/prepare
-returns 202 and schedules Collector using the configured core model. Payload
-contains preparation status, revision, understanding summary, proposed products
-and topics, questions, retained answers, errors and cumulative usage.
+Unlike the project this derives from, there is no duplicated serverless mirror of
+the backend — one copy, run directly.
 
-Preparing, awaiting_confirmation and running are separate task states.
-Preparation consumes at most 12000 tokens and 120 seconds of execution by default;
-waiting for answers is excluded. Repeated identical revision/request submissions
-share execution, stale revisions return 409, and GET/polling/refresh never start
-work. Partial proposals survive failed website checks. Restart interrupts
-preparation without invoking models. Retry and manual completion are explicit.
+## Data flow
 
-Products are limited to names in user input/answers/edits. Combined names are
-split by Collector; namesakes receive identity options. Proposed vendor URLs use
-the existing search/fetch stack. A name/site match is visibly provisional until
-the user confirms ownership. User edits and answers survive necessary followups.
-Advanced identity fields collapse; unanswered questions must be processed before
-confirmation. Scope warnings require acknowledgment, never silent trimming.
+```
+Browser
+  ├── REST  ──────────────►  FastAPI (main.py)
+  └── EventSource ────────►  GET /api/tasks/{id}/stream
+                                    │
+                                    ▼
+                            orchestrator.run_pipeline()
+                                    │
+        ┌───────────────┬───────────┼───────────┬───────────────┐
+        ▼               ▼           ▼           ▼               ▼
+    llm.py          search/     fetcher.py  credibility.py   trace.py
+   (providers)   (Exa/Tavily/    (httpx +     (0-100 score)  (span buffer)
+        │            DDG)       trafilatura)                      │
+        ▼               │                                         │
+   ratelimit.py         │                                         │
+  (token buckets)       ▼                                         ▼
+                   the open web                            SQLite (db.py)
+```
 
-POST /tasks/{id}/start validates a ResearchScope and reserves one research job.
-Scope contains 1-4 confirmed software products, websites, categories, an optional
-own-product flag, editable topics/focus and current state plus 90-day changes.
-Broad scopes require acknowledgment; strategic topics also require boundaries.
+Every synchronous step runs inside `asyncio.to_thread`, so the SSE generator
+never blocks while a page is being fetched or a model is thinking.
 
-## Research and evidence
+## Core modules
 
-Collector proposes bounded queries, fetches public sources and checks external
-product identity using locatable text. Vendor attribution derives from the
-confirmed vendor relationship; third-party experiences remain distinct from
-vendor commitments. Excerpts, context, publication/capture dates and fetching
-limitations are separate fields.
+| Module | Responsibility |
+|---|---|
+| `tasks.py` | Runs each task once, retains live events for subscribers, persists terminal state. |
+| `orchestrator.py` | The pipeline. One async generator that yields SSE events as it walks the stages. |
+| `llm.py` | Provider-neutral `chat`, `chat_json`, `chat_schema`: HTTP completions, JSON mode, retries, token accounting, trace hook. |
+| `llm_mock.py` | Deterministic model substitute using explicit task kinds and input context; no model network, fabricated prices or citations. |
+| `ratelimit.py` | Thread-safe RPM/RPD/TPM token buckets plus a concurrency semaphore. |
+| `search/` | Provider protocol and adapters, with failover and relevance filtering. |
+| `fetcher.py` | Page fetch and article extraction, with per-domain politeness and an in-process cache. |
+| `platforms.py` | Social platform registry. Reddit and HN have API collectors; the rest use site-restricted search. |
+| `sentiment.py` | Sentiment classification, opinion camps, representative quotes. |
+| `credibility.py` | Deterministic 0-100 evidence scoring. No model involved. |
+| `audit.py` | Quality evaluation, the LLM reviewer, and rework routing. |
+| `verify.py` | Post-write checks on the finished document: citation validation, formatting repair, editorial review, rewrite routing. |
+| `schemas.py` | Tolerant coercion into feature tree / pricing / persona, with citation filtering. |
+| `metrics.py` | Impact metrics, each with its formula. |
+| `charts.py` | ECharts option builders. |
+| `trace.py` | Contextvar-based span recording. |
+| `db.py` | SQLite: 7 tables, thread-local connections, WAL. |
 
-Analyst writes atomic comparisons, conditional judgments, a brief and changes.
-Reviewer checks citation validity mechanically and semantic support independently.
-All three use the same configured core model with separate responsibility prompts.
-Stable IDs connect items to quotations, conditions and dependencies. Invalid
-citations are Unknown; absent semantic assessments remain Pending review.
-Unresolved or cyclic dependencies cannot support a conclusion. Charts use only
-supported numbers with identical measurement/billing conditions and point-level
-citations. There are no inferred overall credibility scores.
+## The pipeline
 
-At most two reworks address actionable issues and dependent conclusions;
-unaffected content is preserved. Exhaustion saves available artifacts with
-explicit limitations. Empty new work fails rather than claiming success.
+```
+intake → orchestrator → collect → analyze → audit ──pass──► write → verify → done
+                          ▲                    │                      │
+                          └──────rework────────┘                      │
+                                                  section rewrite ◄───┘
+```
 
-## Background execution and visualization
+Note that **audit runs before write**. Rework improves the analysis that gets
+written up, rather than rewriting prose around unchanged findings. **Verify runs
+after write**, on the document itself — the two gates answer different
+questions, and neither can answer the other's.
 
-Research/followup/review tasks run independently of SSE. Defaults are 100000
-tokens and 1200 seconds, including retries and automatic rework. Each real attempt
-reserves conservative input plus its output ceiling before calling the provider.
-Usage reconciles reservations; missing usage and failed attempts keep estimates.
-Quota waits, backoff, fetching and model requests respect the remaining deadline.
-A ContextVar shares the budget with workers. Cancellation prevents late writes.
+| Stage | What happens |
+|---|---|
+| **intake** | The director breaks the brief into competitors, focus areas and search angles. |
+| **orchestrator** | A team is selected from the 52-analyst roster, each with a stated reason. |
+| **collect** | Per competitor: multi-angle search → fetch → relevance filter → `Evidence` with a credibility score. Then user voice across every registered platform. |
+| **analyze** | Cross-validation into claims, plus the structured feature/pricing/persona objects. Sentiment is classified here. |
+| **audit** | Rule-based quality evaluation plus a model review that scores each dimension. Either passes or emits `REWORK` envelopes. |
+| **write** | Sections written in parallel, paced by the rate limiter. Charts built from real analysis output. |
+| **verify** | The finished prose is checked and repaired, then read as a whole for contradictions and unsupported claims. Failing sections are rewritten. |
+| **done** | Metrics computed, report assembled and persisted, traces saved, analyst stats updated. |
 
-The event loop owns persistence. Evidence and draft/review checkpoints persist
-during execution. A visualization checkpoint stores role states, overall progress,
-rework round and up to 200 concise activity entries from actual searches, draft
-handoffs and review issues. The left timeline, middle activity and right evidence
-stream restore directly from checkpoints. Trace/usage details are collapsed.
-Older saved tasks can display recorded diagnostic call summaries without inventing
-a historical activity log. Narrow screens switch panels with tabs.
+### Research modes
 
-Events have increasing IDs; SSE supports Last-Event-ID/after cursors and client
-deduplication. Transport failure is distinct from task failure. Terminal results
-restore from SQLite, without requiring an entire event history. Restart interrupts
-running jobs; manual research retry creates a new task and preserves artifacts.
+`MODE_CONFIG` in `orchestrator.py` scales everything together:
 
-## Versions and reader annotations
+| | Quick | Deep | Expert |
+|---|---|---|---|
+| Search angles | 4 | 6 | 9 |
+| Pages fetched per brand | 6 | 12 | 16 |
+| Sections | 5 | 9 | 12 |
+| Rework rounds | 0 | 1 | 2 |
+| Min paragraphs/section | 3 | 5 | 7 |
+| Verify rounds | 1 | 1 | 2 |
+| Max section rewrites | 2 | 4 | 6 |
 
-Schema v3: tasks, reports, versions, evidences, traces, annotations. The v2-to-v3
-transaction only adds annotation storage and advances PRAGMA user_version.
-Existing v2 data and application configuration remain intact. Only pre-v2 legacy
-databases use the previous named-table reset. Migration failure rolls back and
-blocks startup; unsupported future schemas also block startup.
+### Rework
 
-Reports point to one current version. Immutable versions store content, kind,
-candidate/applied state, base version, task and change metadata. Candidates never
-move the pointer automatically. Save/apply/restore compare the current pointer
-under BEGIN IMMEDIATE and return 409 on conflict. Restore creates a new snapshot.
-Manual edits invalidate only changed items and transitive dependents.
+`audit.decide_rework()` routes by cause, which is what makes the loop converge
+instead of re-running everything:
 
-Annotations store color, comment, revision, version, original quotes, content IDs,
-UTF-16 start/end offsets and surrounding context. Emoji boundaries are validated.
-A cross-item selection becomes one note with multiple anchors. Current-version
-and annotation-revision checks guard write/update/delete; historical versions
-and candidates are read-only. Notes do not create content versions or change
-evidence review states. Unsaved note/content drafts remain in browser storage.
+- thin evidence for a brand → back to **collect** with extra angles
+- an uncovered dimension or an empty schema → back to **analyze**, with the
+  reviewer's specific findings injected into the prompt
 
-Content version transactions clone annotations atomically. Save and candidate
-apply use the latest notes on the base current version; restore uses historical
-notes. Unchanged text retains offsets. Changed text requires a unique exact
-quote/context match; otherwise the retained note is visibly unanchored.
-Citation buttons expand, scroll and highlight the right source card. Notes locate
-their marked passages. The same behavior works in the narrow-screen drawer.
+After the loop, a second review runs. Improvement is measured as the maximum of
+three signals — rule-issue delta, reviewer-issue delta, and the number of score
+dimensions that went up — because the reviewer regenerates its issue list each
+round, which makes raw counts noisy.
 
-## Interfaces
+### Verification
 
-Requests use snake_case and reject unknown fields where typed contracts apply.
-Legacy mode, subscription, expert, monitoring, knowledge, feedback and synchronous
-refine interfaces are removed.
+`verify.py` gates the artifact rather than the analysis, in two layers.
 
-- POST /api/tasks {query}; GET /api/tasks and /api/tasks/{id}.
-- POST /api/tasks/{id}/prepare {base_revision,answers,draft_scope?} -> 202.
-- POST /api/tasks/{id}/start ResearchScope; POST /retry creates a new task.
-- GET /api/tasks/{id}/stream and /trace.
-- GET /api/reports and /api/reports/{id}; PATCH title/starred; DELETE history.
-- GET /api/reports/{id}/versions and /versions/{version_id}.
-- POST /followups {base_version_id,target_ids,selected_text,question}.
-- POST /reviews {base_version_id,target_ids?}.
-- POST /edits {base_version_id,edits:{item_id:text}}.
-- POST /apply {base_version_id,candidate_version_id}.
-- POST /restore {base_version_id,version_id}.
-- GET /annotations?version_id=...; POST /annotations
-  {version_id,anchors:[{item_id,start,end,quote,prefix?,suffix?}],color,comment}.
-- PATCH /annotations/{annotation_id} {version_id,revision,color?,comment?}.
-- DELETE /annotations/{annotation_id}?version_id=...&revision=....
-- GET /api/reports/{id}/trace; GET /api/settings exposes public defaults.
+**Rules, applied and repaired in code.** Every `[e_xxxx]` marker in the prose is
+resolved against the collected evidence: real ids are normalized and collected
+per section, ids matching nothing are removed. Leftover markdown, literal `\n`,
+doubled spacing and stray asterisks are stripped. Truncated paragraphs, the
+writer's failure placeholder, empty sections, duplicated paragraphs and
+impossible shares (a percentage over 100 in share context — growth rates are
+left alone) are recorded as findings.
 
-Annotation routes are relative to /api/reports/{id}. Colors are sun, ok, risk,
-info (Important, Agree, Questionable, Follow up). FastAPI /docs lists full models.
+**A single editorial read.** One model call sees every section at once — the
+only stage that does — and looks for contradictions between sections,
+quantitative assertions with nothing behind them, hedged claims restated as
+fact, and repetition.
+
+**Remediation is rewriting, never rework.** Nothing goes back to collection or
+analysis: a section with one major finding, or two minor ones, is rewritten
+against the same evidence with its own defects named in the prompt. The new
+draft is re-checked and kept only if it is not mechanically worse than the one
+it replaces, so a regeneration cannot quietly degrade the report. Anything still
+open when the rewrite budget runs out ships as a visible `flagged` verdict with
+the findings listed — the report says what is wrong with it rather than hiding
+it.
+
+The sentiment section is checked but never rewritten: it is written from the
+computed sentiment table, so its figures are sourced by construction and it
+carries no inline citations by design.
+
+## Model routing
+
+`LLM_PROVIDER=mock|qwen|openai` selects one provider for the process; restart to
+switch. Mock is the default. Qwen and OpenAI share an `httpx` adapter for
+`/chat/completions`. Qwen uses `max_tokens` with thinking disabled; OpenAI uses
+`max_completion_tokens`. JSON mode adds a JSON instruction and `json_object`
+response format. Array results use an `items` wrapper, unwrapped on parsing.
+Optional schemas are prompt constraints, followed by the existing tolerant
+coercion; they are not a guarantee of strict server-side schema validation.
+
+| Tier | Config variable | Used for |
+|---|---|---|
+| `core` / `aux` | `OPENAI_MODEL_CORE` / `QWEN_MODEL_CORE` | Sections, cross-analysis, audit review |
+| `fast` | `OPENAI_MODEL_FAST` / `QWEN_MODEL_FAST` | Intake, scope discovery, dispatch, sentiment classification |
+
+Rate-limit buckets are per tier, and the fast tier only gets its own budget when
+it is genuinely a different model. `LLM_RPM_*`, `LLM_RPD_*` and `LLM_TPM_*`
+are per-process local budgets (0 disables the cap), and
+`LLM_MAX_CONCURRENCY` defaults to 4. Daily caps reset at midnight fixed UTC-08:00,
+not according to a provider's account quota reset. Retryable network/status
+failures release their concurrency lease before bounded backoff.
+
+All LLM methods accept optional `task_kind` and `mock_context` keyword arguments.
+Research call sites pass an operation and structured source context; real HTTP
+requests do not include these fields. Mock copies supplied excerpts, applies the
+existing sentiment keyword rules and returns actual rule-side review scores.
+Unsupported pricing/persona data remains empty. Mechanical checks and rework
+budgets still run, and a simulated report can remain flagged. Search, fetching,
+social collection and SQLite still execute normally. Offline tests replace only
+collection inputs and use a temporary database.
+
+Mock bypasses model quotas, records `mock:` trace model names with zero tokens,
+and reports `{}` for quota usage. `/health` and `/api/llm/ping` expose
+`llm_provider` and `is_mock`. Persisted reports include the same metadata and a
+visible `[MOCK] 模拟报告` subtitle. Existing report JSON storage needs no migration.
+Gemini and its SDK were removed; old `GEMINI_*` settings are ignored.
+
+## Evidence and claims
+
+```
+Evidence:  evidence_id · source_url · source_type · title · excerpt
+           captured_at · credibility(0-100) · collected_by · brand
+           domain · freshness_days
+```
+
+`source_type` is defined once in `models.py` and imported everywhere:
+`official · sec_filing · analyst · news · review · reddit · hackernews ·
+youtube · x · forum · web`.
+
+Confidence is assigned by rule in `make_claim()`:
+
+| Condition | Confidence |
+|---|---|
+| No evidence | `unverified` |
+| ≥2 independent domains | `high` |
+| ≥2 citations, same domain | `medium` |
+| 1 citation | `low` |
+
+## Observability
+
+`trace.set_context()` writes a contextvar before each `asyncio.to_thread` hop.
+Because `to_thread` copies the context, the synchronous `llm.chat()` running in
+that worker sees it and records a span with the right agent and stage attached —
+no call site has to pass it.
+
+Spans are drained incrementally at each stage boundary and pushed over SSE, then
+persisted with the report for the decision-replay view.
+
+## SSE
+
+`POST /api/tasks` persists the identified subject, questionnaire, mode and optional
+`subscription_id`. `GET /api/tasks/{id}` restores the question, questionnaire,
+answers, state and report link; unknown IDs return 404. Rival selections extend
+the primary subject rather than replacing it.
+
+`GET /api/tasks/{id}/stream` reserves an unstarted task once. `TaskRunner` owns a
+background producer independently of SSE connections. Concurrent subscribers
+share the same producer and in-memory event buffer. Event IDs increase for that
+task; `Last-Event-ID` and the `after` query parameter resume after a cursor.
+Closing a subscriber never cancels the research job. The browser caps retries at
+three for the lifetime of a subscription, and closes on `done` or a business
+`error` event.
+
+Completed jobs release their live buffer; reconnects use the saved terminal
+sequence and report ID. Failure and interruption are terminal and require a new
+task. Startup marks previously running tasks interrupted; shutdown cancels jobs
+and persists interruption. This is single-process execution, not durable job
+resumption after a backend restart. Deleted reports produce 410 for their task
+streams rather than silently starting over.
+
+Fatal model configuration, authentication and quota errors propagate through
+fallbacks and terminate a job. Malformed model output can still use the existing
+repair path, but a report whose authored sections all fail after verification
+is not saved as a successful result.
+
+
+## Storage
+
+SQLite with thread-local connections (a shared connection across `to_thread`
+workers deadlocks), WAL mode and a 30-second busy timeout.
+
+Tables: `tasks`, `reports`, `evidences`, `subscriptions`, `expert_stats`,
+`traces`, `report_feedback` — with indexes on every hot filter path.

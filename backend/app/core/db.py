@@ -1,209 +1,778 @@
-"""Transactional SQLite storage; legacy data is reset exactly once at schema v2."""
+"""SQLite persistence: tasks, reports, evidence, subscriptions, expert stats, traces.
+
+Tasks and completed reports survive refreshes and restarts. Running event
+buffers live in the task runner; a process restart marks unfinished work interrupted.
+
+Concurrency note: the orchestrator spawns many worker threads via
+`asyncio.to_thread`, and a single `sqlite3.Connection` shared across them
+deadlocks ("recursive use of cursors", which surfaces as a hung backend). Each
+thread therefore gets its own connection, with WAL mode plus a busy timeout so
+concurrent writers queue instead of erroring.
+"""
 from __future__ import annotations
+
+import datetime as _dt
 import json
 import os
 import sqlite3
 import threading
-import uuid
 from pathlib import Path
-from app.core.models import now
+from typing import Any, Dict, List, Optional
 
-_DB_PATH = Path(os.environ.get("VANTAGE_DB_PATH") or Path(__file__).resolve().parent.parent / "data" / "vantage.db")
+
+def _resolve_db_path() -> Path:
+    """Where the database file lives.
+
+    Local: `app/data/vantage.db`. On a serverless host the filesystem is
+    read-only apart from /tmp, which lasts only for the function's lifetime.
+    `VANTAGE_DB_PATH` overrides both.
+    """
+    override = os.environ.get("VANTAGE_DB_PATH")
+    if override:
+        return Path(override)
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return Path("/tmp/vantage.db")
+    return Path(__file__).resolve().parent.parent / "data" / "vantage.db"
+
+
+_DB_PATH = _resolve_db_path()
+# SQLite allows one writer at a time; serializing writes avoids "database is locked".
 _LOCK = threading.RLock()
 _LOCAL = threading.local()
 _SCHEMA_READY = False
-SCHEMA_VERSION = 3
+_SCHEMA_LOCK = threading.Lock()
 
-def uid(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:16]}"
 
-class Conflict(ValueError):
-    pass
+def _now() -> str:
+    return _dt.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
 
 def _connect() -> sqlite3.Connection:
     conn = getattr(_LOCAL, "conn", None)
-    if conn is None:
-        _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(_DB_PATH), timeout=30, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=30000")
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        try:
-            _init_schema(conn)
-        except BaseException:
-            conn.close()
-            raise
-        _LOCAL.conn = conn
+    if conn is not None:
+        return conn
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(_DB_PATH), check_same_thread=False, timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA foreign_keys=ON;")
+    except sqlite3.Error:
+        pass
+    _ensure_schema(conn)
+    _LOCAL.conn = conn
     return conn
 
-def _init_schema(conn: sqlite3.Connection) -> None:
+
+def _ensure_schema(conn: sqlite3.Connection) -> None:
     global _SCHEMA_READY
-    with _LOCK:
-        version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version > SCHEMA_VERSION:
-            raise RuntimeError("Database is newer than this application; startup stopped.")
-        if version == SCHEMA_VERSION:
-            _SCHEMA_READY = True
+    if _SCHEMA_READY:
+        return
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
             return
-        # DDL and the version marker commit together, without executescript's implicit commit.
-        with conn:
-            conn.execute("BEGIN IMMEDIATE")
-            for table in (() if version == 2 else ("report_feedback", "traces", "evidences", "subscriptions", "expert_stats",
-                          "tasks", "reports")):
-                conn.execute(f"DROP TABLE IF EXISTS {table}")
-            statements = [
-                "CREATE TABLE tasks (task_id TEXT PRIMARY KEY, kind TEXT NOT NULL, query TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, report_id TEXT, version_id TEXT, terminal_seq INTEGER DEFAULT 0, error TEXT DEFAULT '', checkpoint TEXT DEFAULT '{}')",
-                "CREATE TABLE reports (report_id TEXT PRIMARY KEY, title TEXT NOT NULL, current_version_id TEXT, starred INTEGER DEFAULT 0, created_at TEXT NOT NULL)",
-                "CREATE TABLE versions (version_id TEXT PRIMARY KEY, report_id TEXT NOT NULL REFERENCES reports(report_id) ON DELETE CASCADE, base_version_id TEXT, kind TEXT NOT NULL, state TEXT NOT NULL, task_id TEXT, metadata TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL)",
-                "CREATE TABLE evidences (evidence_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, report_id TEXT, data TEXT NOT NULL)",
-                "CREATE TABLE traces (span_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, report_id TEXT, seq INTEGER, data TEXT NOT NULL)",
-                "CREATE INDEX idx_versions_report ON versions(report_id, created_at)",
-                "CREATE INDEX idx_evidences_task ON evidences(task_id)",
-                "CREATE INDEX idx_traces_task ON traces(task_id, seq)",
-                "CREATE INDEX idx_tasks_created ON tasks(created_at DESC)",
-            ]
-            for statement in ([] if version == 2 else statements):
-                conn.execute(statement)
-            conn.execute("CREATE TABLE annotations (annotation_id TEXT PRIMARY KEY, report_id TEXT NOT NULL REFERENCES reports(report_id) ON DELETE CASCADE, version_id TEXT NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE, data TEXT NOT NULL)")
-            conn.execute("CREATE INDEX idx_annotations_version ON annotations(report_id, version_id)")
-            conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+        _init_schema(conn)
         _SCHEMA_READY = True
 
-def initialize() -> None:
-    _connect()
 
-def save_task(query: str, kind: str = "research", payload: dict | None = None, report_id: str | None = None) -> dict:
-    tid = uid("t")
-    with _LOCK, _connect() as c:
-        c.execute("INSERT INTO tasks(task_id,kind,query,payload,status,created_at,report_id) VALUES(?,?,?,?,?,?,?)",
-                  (tid, kind, query, json.dumps(payload or {}), "created", now(), report_id))
-    return get_task(tid)
+def _init_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS tasks (
+            task_id TEXT PRIMARY KEY,
+            query TEXT,
+            clarifications TEXT,
+            status TEXT,
+            created_at TEXT,
+            report_id TEXT
+        );
+        CREATE TABLE IF NOT EXISTS reports (
+            report_id TEXT PRIMARY KEY,
+            task_id TEXT,
+            title TEXT,
+            subtitle TEXT,
+            query TEXT,
+            brands TEXT,
+            experts TEXT,
+            cover_image TEXT,
+            data TEXT,
+            evidence_count INTEGER,
+            claim_count INTEGER,
+            high_conf_count INTEGER,
+            created_at TEXT,
+            starred INTEGER NOT NULL DEFAULT 0,
+            mode TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS evidences (
+            evidence_id TEXT PRIMARY KEY,
+            report_id TEXT,
+            source_url TEXT,
+            source_type TEXT,
+            domain TEXT,
+            title TEXT,
+            excerpt TEXT,
+            credibility REAL,
+            collected_by TEXT,
+            brand TEXT,
+            captured_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            sub_id TEXT PRIMARY KEY,
+            query TEXT,
+            brands TEXT,
+            created_at TEXT,
+            last_run_at TEXT,
+            last_report_id TEXT,
+            run_count INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS expert_stats (
+            expert_id TEXT PRIMARY KEY,
+            missions INTEGER DEFAULT 0,
+            claims_authored INTEGER DEFAULT 0,
+            evidence_collected INTEGER DEFAULT 0,
+            last_active TEXT
+        );
+        CREATE TABLE IF NOT EXISTS traces (
+            span_id TEXT PRIMARY KEY,
+            task_id TEXT,
+            report_id TEXT,
+            seq INTEGER,
+            agent_id TEXT,
+            stage TEXT,
+            purpose TEXT,
+            model TEXT,
+            prompt TEXT,
+            response TEXT,
+            prompt_tokens INTEGER,
+            completion_tokens INTEGER,
+            total_tokens INTEGER,
+            latency_ms INTEGER,
+            decision TEXT,
+            evidence_ids TEXT,
+            ts TEXT
+        );
+        CREATE TABLE IF NOT EXISTS report_feedback (
+            report_id TEXT PRIMARY KEY,
+            edited_blocks INTEGER,
+            total_blocks INTEGER,
+            data TEXT,
+            updated_at TEXT
+        );
 
-def get_task(task_id: str) -> dict | None:
-    row = _connect().execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        -- Every hot read filters on one of these; without them the evidence
+        -- library and trace views degrade to full scans as history grows.
+        CREATE INDEX IF NOT EXISTS idx_evidences_report ON evidences(report_id);
+        CREATE INDEX IF NOT EXISTS idx_evidences_brand ON evidences(brand);
+        CREATE INDEX IF NOT EXISTS idx_evidences_type ON evidences(source_type);
+        CREATE INDEX IF NOT EXISTS idx_traces_task ON traces(task_id, seq);
+        CREATE INDEX IF NOT EXISTS idx_traces_report ON traces(report_id, seq);
+        CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at DESC);
+        """
+    )
+    conn.commit()
+    _add_missing_columns(conn)
+
+
+# Columns added after the first release. `CREATE TABLE IF NOT EXISTS` is a no-op
+# on a database that already has the table, so a new column has to be ALTERed in
+# or every existing vantage.db would break on the first query that names it.
+# Additive only: give each one a default, never drop or retype.
+_LATE_COLUMNS: Dict[str, Dict[str, str]] = {
+    "tasks": {
+        "terminal_seq": "INTEGER NOT NULL DEFAULT 0",
+        "error": "TEXT NOT NULL DEFAULT ''",
+    },
+    "reports": {
+        "starred": "INTEGER NOT NULL DEFAULT 0",
+        # Promoted out of the `data` blob: the card list needs the research mode
+        # and deliberately does not load the blob to get it.
+        "mode": "TEXT NOT NULL DEFAULT ''",
+    },
+}
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    added = False
+    for table, columns in _LATE_COLUMNS.items():
+        present = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, decl in columns.items():
+            if name not in present:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                added = True
+    if added:
+        _backfill_report_modes(conn)
+    conn.commit()
+
+
+def _backfill_report_modes(conn: sqlite3.Connection) -> None:
+    """Fill in `mode` for reports written before the column existed.
+
+    The value was always recorded — inside `data` — so this recovers it rather
+    than guessing. Runs only for rows still holding the empty default, which
+    makes it a no-op on the second call and safe to leave in the startup path.
+    """
+    rows = conn.execute(
+        "SELECT report_id, data FROM reports WHERE mode = ''"
+    ).fetchall()
+    for row in rows:
+        try:
+            mode = json.loads(row["data"]).get("mode") or ""
+        except (ValueError, TypeError):
+            continue  # an unreadable blob is not worth failing startup over
+        if mode:
+            conn.execute(
+                "UPDATE reports SET mode=? WHERE report_id=?", (mode, row["report_id"])
+            )
+
+
+# ── tasks ─────────────────────────────────────────────────────────────────────
+def save_task(task_id: str, query: str, clarifications: Dict[str, Any]) -> None:
+    with _LOCK:
+        c = _connect()
+        c.execute(
+            "INSERT OR REPLACE INTO tasks(task_id,query,clarifications,status,created_at,report_id)"
+            " VALUES(?,?,?,?,?,COALESCE((SELECT report_id FROM tasks WHERE task_id=?),NULL))",
+            (task_id, query, json.dumps(clarifications), "created", _now(), task_id),
+        )
+        c.commit()
+
+
+def update_task_clarify(task_id: str, clarifications: Dict[str, Any]) -> bool:
+    with _LOCK:
+        c = _connect()
+        changed = c.execute(
+            "UPDATE tasks SET clarifications=?, status='clarified' WHERE task_id=? "
+            "AND status IN ('created','clarified')",
+            (json.dumps(clarifications), task_id),
+        )
+        c.commit()
+        return changed.rowcount == 1
+
+
+def get_task(task_id: str) -> Optional[Dict[str, Any]]:
+    c = _connect()
+    row = c.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
     if not row:
         return None
-    data = dict(row)
-    for key in ("payload", "checkpoint"):
-        data[key] = json.loads(data[key])
-    return data
+    d = dict(row)
+    d["clarifications"] = json.loads(d.get("clarifications") or "{}")
+    return d
 
-def list_tasks() -> list[dict]:
-    rows = _connect().execute("SELECT task_id FROM tasks ORDER BY created_at DESC").fetchall()
-    return [get_task(row[0]) for row in rows]
 
-def claim_task(task_id: str, payload: dict | None = None) -> bool:
-    with _LOCK, _connect() as c:
-        if payload is None:
-            row = c.execute("UPDATE tasks SET status='running' WHERE task_id=? AND status IN ('created','awaiting_confirmation')", (task_id,))
-        else:
-            row = c.execute("UPDATE tasks SET status='running',payload=? WHERE task_id=? AND status IN ('created','awaiting_confirmation')",
-                            (json.dumps(payload), task_id))
-        return row.rowcount == 1
+def mark_task_done(task_id: str, report_id: str) -> None:
+    with _LOCK:
+        c = _connect()
+        c.execute(
+            "UPDATE tasks SET status='done', report_id=? WHERE task_id=?",
+            (report_id, task_id),
+        )
+        c.commit()
 
-def checkpoint(task_id: str, data: dict) -> None:
-    with _LOCK, _connect() as c:
-        c.execute("UPDATE tasks SET checkpoint=? WHERE task_id=? AND status IN ('running','done','failed','interrupted')", (json.dumps(data), task_id))
+
+def claim_task(task_id: str) -> bool:
+    """Atomically reserve a task before scheduling its only research run."""
+    with _LOCK:
+        c = _connect()
+        changed = c.execute(
+            "UPDATE tasks SET status='running', error='' WHERE task_id=? "
+            "AND status IN ('created','clarified')", (task_id,),
+        )
+        c.commit()
+        return changed.rowcount == 1
+
 
 def finish_task(task_id: str, status: str, seq: int, error: str = "") -> None:
-    with _LOCK, _connect() as c:
-        c.execute("UPDATE tasks SET status=?,terminal_seq=?,error=? WHERE task_id=?", (status, seq, error, task_id))
+    with _LOCK:
+        c = _connect()
+        c.execute(
+            "UPDATE tasks SET status=?, terminal_seq=?, error=? WHERE task_id=?",
+            (status, seq, error, task_id),
+        )
+        c.commit()
+
 
 def interrupt_running_tasks() -> None:
-    with _LOCK, _connect() as c:
-        c.execute("UPDATE tasks SET status='interrupted',terminal_seq=MAX(terminal_seq,1),error=? WHERE status='running'",
-                  ("Interrupted by a backend restart. Retry manually to create a new task.",))
-        for row in c.execute("SELECT task_id,payload FROM tasks WHERE status='preparing'").fetchall():
-            payload = json.loads(row[1])
-            payload['preparation']['status'] = 'interrupted'
-            c.execute("UPDATE tasks SET status='awaiting_confirmation',payload=? WHERE task_id=?", (json.dumps(payload), row[0]))
+    with _LOCK:
+        c = _connect()
+        c.execute(
+            "UPDATE tasks SET status='interrupted', terminal_seq=MAX(terminal_seq,1), "
+            "error='Research was interrupted by a backend restart. Create a new task.' "
+            "WHERE status='running'",
+        )
+        c.commit()
 
-def save_evidence(task_id: str, evidence: dict, report_id: str | None = None) -> None:
-    with _LOCK, _connect() as c:
-        c.execute("INSERT OR IGNORE INTO evidences VALUES(?,?,?,?)",
-                  (evidence["evidence_id"], task_id, report_id, json.dumps(evidence)))
 
-def save_traces(task_id: str, report_id: str, spans: list[dict]) -> None:
-    with _LOCK, _connect() as c:
-        for span in spans:
-            c.execute("INSERT OR REPLACE INTO traces VALUES(?,?,?,?,?)",
-                      (span["span_id"], task_id, report_id, span.get("seq", 0), json.dumps(span)))
+# ── reports + evidence ────────────────────────────────────────────────────────
+def save_report(report: Dict[str, Any], task_id: str = "") -> None:
+    evidence = report.get("evidence", [])
+    claims = report.get("claims", [])
+    high = sum(1 for c in claims if c.get("confidence") == "high")
+    with _LOCK:
+        c = _connect()
+        # `starred` is carried over from any existing row: this is REPLACE, not
+        # UPDATE, and a refine or a feedback post re-saves the whole report —
+        # without the sub-select those paths would silently unstar it.
+        c.execute(
+            "INSERT OR REPLACE INTO reports(report_id,task_id,title,subtitle,query,brands,experts,"
+            "cover_image,data,evidence_count,claim_count,high_conf_count,created_at,mode,starred)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
+            "COALESCE((SELECT starred FROM reports WHERE report_id=?),0))",
+            (
+                report["id"],
+                task_id or _existing_report_task(c, report["id"]),
+                report.get("title", ""),
+                report.get("subtitle", ""),
+                report.get("query", ""),
+                json.dumps(report.get("brands", [])),
+                json.dumps(report.get("experts", [])),
+                report.get("cover_image", ""),
+                json.dumps(report),
+                len(evidence),
+                len(claims),
+                high,
+                report.get("created_at", _now()),
+                report.get("mode", ""),
+                report["id"],
+            ),
+        )
+        # Evidence is also stored row-wise so the global evidence library can
+        # query across every report, not just inside one report's JSON blob.
+        for ev in evidence:
+            c.execute(
+                "INSERT OR REPLACE INTO evidences(evidence_id,report_id,source_url,source_type,"
+                "domain,title,excerpt,credibility,collected_by,brand,captured_at)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    ev.get("evidence_id"),
+                    report["id"],
+                    ev.get("source_url", ""),
+                    ev.get("source_type", ""),
+                    ev.get("domain", ""),
+                    ev.get("title", ""),
+                    ev.get("excerpt", "")[:500],
+                    ev.get("credibility", 0.0),
+                    ev.get("collected_by", ""),
+                    ev.get("brand", ""),
+                    ev.get("captured_at", _now()),
+                ),
+            )
+        c.commit()
 
-def get_traces_by_task(task_id: str) -> list[dict]:
-    return [json.loads(r[0]) for r in _connect().execute("SELECT data FROM traces WHERE task_id=? ORDER BY seq", (task_id,))]
 
-def get_traces_by_report(report_id: str) -> list[dict]:
-    return [json.loads(r[0]) for r in _connect().execute("SELECT data FROM traces WHERE report_id=? ORDER BY seq", (report_id,))]
+def _existing_report_task(conn: sqlite3.Connection, report_id: str) -> str:
+    row = conn.execute("SELECT task_id FROM reports WHERE report_id=?", (report_id,)).fetchone()
+    return (row["task_id"] or "") if row else ""
 
-def _version(row: sqlite3.Row | None) -> dict | None:
+
+def get_report(report_id: str) -> Optional[Dict[str, Any]]:
+    c = _connect()
+    row = c.execute(
+        "SELECT data FROM reports WHERE report_id=?", (report_id,)
+    ).fetchone()
     if not row:
         return None
-    data = dict(row)
-    data["metadata"] = json.loads(data["metadata"])
-    data["content"] = json.loads(data["content"])
-    return data
+    return json.loads(row["data"])
 
-def get_version(report_id: str, version_id: str) -> dict | None:
-    return _version(_connect().execute("SELECT * FROM versions WHERE report_id=? AND version_id=?", (report_id, version_id)).fetchone())
 
-def get_report(report_id: str) -> dict | None:
-    row = _connect().execute("SELECT * FROM reports WHERE report_id=?", (report_id,)).fetchone()
-    if not row:
-        return None
-    data = dict(row)
-    data["starred"] = bool(data["starred"])
-    data["version"] = get_version(report_id, data["current_version_id"])
-    return data
+def list_reports() -> List[Dict[str, Any]]:
+    """Report cards — omits the full `data` blob to keep the list light."""
+    c = _connect()
+    rows = c.execute(
+        "SELECT report_id,title,subtitle,query,brands,experts,cover_image,"
+        "evidence_count,claim_count,high_conf_count,created_at,mode,starred FROM reports "
+        "ORDER BY created_at DESC"
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["id"] = d["report_id"]
+        d["brands"] = json.loads(d.get("brands") or "[]")
+        d["experts"] = json.loads(d.get("experts") or "[]")
+        # Stored as 0/1 because SQLite has no boolean; handed to the client as
+        # one so the UI never has to know that.
+        d["starred"] = bool(d.get("starred"))
+        out.append(d)
+    return out
 
-def list_reports() -> list[dict]:
-    rows = _connect().execute("SELECT * FROM reports ORDER BY created_at DESC").fetchall()
-    return [{**dict(row), "starred": bool(row["starred"])} for row in rows]
 
-def list_versions(report_id: str) -> list[dict]:
-    rows = _connect().execute("SELECT * FROM versions WHERE report_id=? ORDER BY created_at DESC,rowid DESC", (report_id,)).fetchall()
-    return [{k: v for k, v in _version(row).items() if k != "content"} for row in rows]
+def update_report(
+    report_id: str,
+    title: Optional[str] = None,
+    starred: Optional[bool] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Rename and/or star a report. Returns the updated card, or None if unknown.
 
-def create_version(report_id: str | None, content: dict, kind: str, *, base_version_id: str | None = None,
-                   candidate: bool = False, task_id: str = "", metadata: dict | None = None, title: str = "") -> dict:
-    vid, rid = uid("v"), report_id or uid("r")
-    with _LOCK, _connect() as c:
-        c.execute("BEGIN IMMEDIATE")
-        if not report_id:
-            c.execute("INSERT INTO reports VALUES(?,?,?,?,?)", (rid, title or "Product comparison", None, 0, now()))
-        row = c.execute("SELECT current_version_id FROM reports WHERE report_id=?", (rid,)).fetchone()
+    A rename has to land in two places: the `title` column the report list reads,
+    and the `title` key inside the `data` blob the report page renders from.
+    Writing only the column renames the entry in the sidebar and leaves the open
+    report still showing the old heading.
+
+    Only the user-facing label changes — the analysis, its claims and its
+    evidence are untouched, so a renamed report is still the report that was
+    produced and audited.
+    """
+    with _LOCK:
+        c = _connect()
+        row = c.execute(
+            "SELECT data FROM reports WHERE report_id=?", (report_id,)
+        ).fetchone()
         if not row:
-            raise KeyError("Report not found.")
-        if not candidate and row[0] != base_version_id:
-            raise Conflict("The current version changed. Reload and review your changes before applying.")
-        c.execute("INSERT INTO versions VALUES(?,?,?,?,?,?,?,?,?)",
-                  (vid, rid, base_version_id, kind, "candidate" if candidate else "applied", task_id,
-                   json.dumps(metadata or {}), json.dumps(content), now()))
-        from app.core.annotations import inherit
-        source_id = (metadata or {}).get('restored_from') if kind == 'restore' else base_version_id
-        if source_id:
-            inherit(c, rid, source_id, vid, content)
-        if not candidate:
-            c.execute("UPDATE reports SET current_version_id=? WHERE report_id=?", (vid, rid))
-        if task_id:
-            c.execute("UPDATE tasks SET report_id=?,version_id=? WHERE task_id=?", (rid, vid, task_id))
-            c.execute("UPDATE evidences SET report_id=? WHERE task_id=?", (rid, task_id))
-            c.execute("UPDATE traces SET report_id=? WHERE task_id=?", (rid, task_id))
-    return get_version(rid, vid)
-
-def update_report(report_id: str, title: str | None = None, starred: bool | None = None) -> dict | None:
-    with _LOCK, _connect() as c:
+            return None
         if title is not None:
-            c.execute("UPDATE reports SET title=? WHERE report_id=?", (title, report_id))
+            clean = title.strip()[:200]
+            if clean:
+                try:
+                    data = json.loads(row["data"])
+                    data["title"] = clean
+                    blob = json.dumps(data)
+                except (ValueError, TypeError):
+                    blob = row["data"]  # unreadable blob: still rename the card
+                c.execute(
+                    "UPDATE reports SET title=?, data=? WHERE report_id=?",
+                    (clean, blob, report_id),
+                )
         if starred is not None:
-            c.execute("UPDATE reports SET starred=? WHERE report_id=?", (int(starred), report_id))
-    return get_report(report_id)
+            c.execute(
+                "UPDATE reports SET starred=? WHERE report_id=?",
+                (1 if starred else 0, report_id),
+            )
+        c.commit()
+    card = c.execute(
+        "SELECT report_id,title,subtitle,starred FROM reports WHERE report_id=?",
+        (report_id,),
+    ).fetchone()
+    d = dict(card)
+    d["id"] = d["report_id"]
+    d["starred"] = bool(d["starred"])
+    return d
+
 
 def delete_report(report_id: str) -> bool:
-    with _LOCK, _connect() as c:
-        active = c.execute("SELECT 1 FROM tasks WHERE report_id=? AND status='running'", (report_id,)).fetchone()
-        if active:
-            raise Conflict("Wait for this report's active tasks before deleting it.")
-        for table in ("evidences", "traces", "tasks"):
-            c.execute(f"DELETE FROM {table} WHERE report_id=?", (report_id,))
-        return c.execute("DELETE FROM reports WHERE report_id=?", (report_id,)).rowcount == 1
+    """
+    Remove a report and everything derived from it. Returns False if unknown.
+
+    The cascade is explicit because no table declares a foreign key. It has to
+    be: orphaned evidence rows would keep inflating the dashboard counts and the
+    global evidence library long after the report they came from is gone, and an
+    orphaned `last_report_id` would leave a subscription linking to a 404.
+
+    The task row survives as history — only its dangling report link is cleared.
+    """
+    with _LOCK:
+        c = _connect()
+        hit = c.execute(
+            "SELECT 1 FROM reports WHERE report_id=?", (report_id,)
+        ).fetchone()
+        if not hit:
+            return False
+        c.execute("DELETE FROM reports WHERE report_id=?", (report_id,))
+        c.execute("DELETE FROM evidences WHERE report_id=?", (report_id,))
+        c.execute("DELETE FROM traces WHERE report_id=?", (report_id,))
+        c.execute("DELETE FROM report_feedback WHERE report_id=?", (report_id,))
+        c.execute("UPDATE tasks SET report_id='' WHERE report_id=?", (report_id,))
+        c.execute(
+            "UPDATE subscriptions SET last_report_id='' WHERE last_report_id=?",
+            (report_id,),
+        )
+        c.commit()
+        return True
+
+
+# ── global evidence library ───────────────────────────────────────────────────
+def query_evidences(
+    brand: Optional[str] = None,
+    source_type: Optional[str] = None,
+    min_cred: float = 0.0,
+    limit: int = 200,
+) -> List[Dict[str, Any]]:
+    c = _connect()
+    sql = "SELECT * FROM evidences WHERE credibility>=?"
+    args: List[Any] = [min_cred]
+    if brand:
+        sql += " AND brand=?"
+        args.append(brand)
+    if source_type:
+        sql += " AND source_type=?"
+        args.append(source_type)
+    sql += " ORDER BY credibility DESC, captured_at DESC LIMIT ?"
+    args.append(limit)
+    return [dict(r) for r in c.execute(sql, args).fetchall()]
+
+
+def evidence_facets() -> Dict[str, Any]:
+    """Aggregate counts by source type and brand."""
+    c = _connect()
+    total = c.execute("SELECT COUNT(*) n FROM evidences").fetchone()["n"]
+    by_type = {
+        r["source_type"]: r["n"]
+        for r in c.execute(
+            "SELECT source_type, COUNT(*) n FROM evidences GROUP BY source_type"
+        ).fetchall()
+    }
+    by_brand = {
+        r["brand"]: r["n"]
+        for r in c.execute(
+            "SELECT brand, COUNT(*) n FROM evidences WHERE brand!='' "
+            "GROUP BY brand ORDER BY n DESC LIMIT 12"
+        ).fetchall()
+    }
+    return {"total": total, "by_type": by_type, "by_brand": by_brand}
+
+
+# ── dashboard ─────────────────────────────────────────────────────────────────
+def dashboard_stats() -> Dict[str, Any]:
+    c = _connect()
+    reports = c.execute("SELECT COUNT(*) n FROM reports").fetchone()["n"]
+    ev_total = c.execute("SELECT COUNT(*) n FROM evidences").fetchone()["n"]
+    claim_total = c.execute(
+        "SELECT COALESCE(SUM(claim_count),0) n FROM reports"
+    ).fetchone()["n"]
+    high_total = c.execute(
+        "SELECT COALESCE(SUM(high_conf_count),0) n FROM reports"
+    ).fetchone()["n"]
+    avg_ev = round(ev_total / reports, 1) if reports else 0
+    fact_rate = round(high_total / claim_total * 100) if claim_total else 0
+    facets = evidence_facets()
+    intel = intel_overview()
+    return {
+        "reports": reports,
+        "evidence_total": ev_total,
+        "claim_total": claim_total,
+        "high_conf_total": high_total,
+        "avg_evidence_per_report": avg_ev,
+        "fact_accuracy": fact_rate,
+        "platform_distribution": facets["by_type"],
+        "brand_distribution": facets["by_brand"],
+        "minutes_saved": intel["minutes_saved"],
+        "avg_efficiency": intel["avg_efficiency"],
+        "avg_coverage": intel["avg_coverage"],
+        "total_tokens": intel["total_tokens"],
+        "research_cards": intel["cards"],
+    }
+
+
+def intel_overview() -> Dict[str, Any]:
+    """Roll up real per-report metrics across recent research.
+
+    Reads `data.metrics` out of each stored report rather than recomputing, so
+    the headline "minutes saved" figure traces back to individual runs.
+    """
+    c = _connect()
+    rows = c.execute(
+        "SELECT report_id,title,query,brands,evidence_count,claim_count,"
+        "high_conf_count,created_at,data FROM reports ORDER BY created_at DESC LIMIT 60"
+    ).fetchall()
+    cards: List[Dict[str, Any]] = []
+    minutes_saved = 0.0
+    eff_list: List[float] = []
+    cov_list: List[float] = []
+    total_tokens = 0
+    for r in rows:
+        try:
+            data = json.loads(r["data"]) if r["data"] else {}
+        except Exception:
+            data = {}
+        m = data.get("metrics") or {}
+        eff = m.get("efficiency") or {}
+        cov = m.get("coverage") or {}
+        manual_min = float(eff.get("manual_estimate_minutes") or 0)
+        elapsed_min = float(eff.get("elapsed_minutes") or 0)
+        saved = max(0.0, manual_min - elapsed_min)
+        minutes_saved += saved
+        if eff.get("efficiency_multiple"):
+            eff_list.append(float(eff["efficiency_multiple"]))
+        if cov.get("coverage_multiple"):
+            cov_list.append(float(cov["coverage_multiple"]))
+        total_tokens += int(eff.get("tokens_used") or 0)
+        cards.append(
+            {
+                "id": r["report_id"],
+                "title": r["title"],
+                "query": r["query"],
+                "brands": json.loads(r["brands"] or "[]"),
+                "evidence_count": r["evidence_count"],
+                "claim_count": r["claim_count"],
+                "high_conf_count": r["high_conf_count"],
+                "created_at": r["created_at"],
+                "efficiency_multiple": eff.get("efficiency_multiple"),
+                "coverage_multiple": cov.get("coverage_multiple"),
+                "elapsed_minutes": eff.get("elapsed_minutes"),
+                "minutes_saved": round(saved, 1),
+                "tokens_used": eff.get("tokens_used"),
+            }
+        )
+    return {
+        "minutes_saved": round(minutes_saved, 1),
+        "avg_efficiency": round(sum(eff_list) / len(eff_list), 1) if eff_list else 0,
+        "avg_coverage": round(sum(cov_list) / len(cov_list), 1) if cov_list else 0,
+        "total_tokens": total_tokens,
+        "cards": cards,
+    }
+
+
+# ── competitor-watch subscriptions ────────────────────────────────────────────
+def create_subscription(sub_id: str, query: str, brands: List[str]) -> Dict[str, Any]:
+    with _LOCK:
+        c = _connect()
+        c.execute(
+            "INSERT OR REPLACE INTO subscriptions(sub_id,query,brands,created_at,"
+            "last_run_at,last_report_id,run_count) VALUES(?,?,?,?,?,?,?)",
+            (sub_id, query, json.dumps(brands), _now(), "", "", 0),
+        )
+        c.commit()
+    return get_subscription(sub_id) or {}
+
+
+def list_subscriptions() -> List[Dict[str, Any]]:
+    c = _connect()
+    rows = c.execute("SELECT * FROM subscriptions ORDER BY created_at DESC").fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["brands"] = json.loads(d.get("brands") or "[]")
+        out.append(d)
+    return out
+
+
+def get_subscription(sub_id: str) -> Optional[Dict[str, Any]]:
+    c = _connect()
+    row = c.execute("SELECT * FROM subscriptions WHERE sub_id=?", (sub_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["brands"] = json.loads(d.get("brands") or "[]")
+    return d
+
+
+def delete_subscription(sub_id: str) -> bool:
+    with _LOCK:
+        c = _connect()
+        changed = c.execute("DELETE FROM subscriptions WHERE sub_id=?", (sub_id,))
+        c.commit()
+        return changed.rowcount == 1
+
+
+def mark_subscription_run(sub_id: str, report_id: str) -> None:
+    with _LOCK:
+        c = _connect()
+        c.execute(
+            "UPDATE subscriptions SET last_run_at=?, last_report_id=?, "
+            "run_count=run_count+1 WHERE sub_id=?",
+            (_now(), report_id, sub_id),
+        )
+        c.commit()
+
+
+# ── expert workload leaderboard ───────────────────────────────────────────────
+def bump_expert_stats(
+    expert_ids: List[str],
+    claims_by_author: Optional[Dict[str, int]] = None,
+    evidence_by_collector: Optional[Dict[str, int]] = None,
+) -> None:
+    claims_by_author = claims_by_author or {}
+    evidence_by_collector = evidence_by_collector or {}
+    ids = set(expert_ids) | set(claims_by_author) | set(evidence_by_collector)
+    with _LOCK:
+        c = _connect()
+        for eid in ids:
+            c.execute(
+                "INSERT INTO expert_stats(expert_id,missions,claims_authored,"
+                "evidence_collected,last_active) VALUES(?,?,?,?,?)"
+                " ON CONFLICT(expert_id) DO UPDATE SET"
+                " missions=missions+excluded.missions,"
+                " claims_authored=claims_authored+excluded.claims_authored,"
+                " evidence_collected=evidence_collected+excluded.evidence_collected,"
+                " last_active=excluded.last_active",
+                (
+                    eid,
+                    1 if eid in expert_ids else 0,
+                    claims_by_author.get(eid, 0),
+                    evidence_by_collector.get(eid, 0),
+                    _now(),
+                ),
+            )
+        c.commit()
+
+
+def expert_workload() -> List[Dict[str, Any]]:
+    c = _connect()
+    rows = c.execute(
+        "SELECT * FROM expert_stats ORDER BY missions DESC, claims_authored DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── trace persistence ─────────────────────────────────────────────────────────
+def save_traces(task_id: str, report_id: str, spans: List[Dict[str, Any]]) -> None:
+    if not spans:
+        return
+    with _LOCK:
+        c = _connect()
+        for s in spans:
+            c.execute(
+                "INSERT OR REPLACE INTO traces(span_id,task_id,report_id,seq,agent_id,stage,"
+                "purpose,model,prompt,response,prompt_tokens,completion_tokens,total_tokens,"
+                "latency_ms,decision,evidence_ids,ts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    s.get("span_id"),
+                    task_id,
+                    report_id,
+                    s.get("seq", 0),
+                    s.get("agent_id", ""),
+                    s.get("stage", ""),
+                    s.get("purpose", ""),
+                    s.get("model", ""),
+                    (s.get("prompt", "") or "")[:2000],
+                    (s.get("response", "") or "")[:2000],
+                    s.get("prompt_tokens", 0),
+                    s.get("completion_tokens", 0),
+                    s.get("total_tokens", 0),
+                    s.get("latency_ms", 0),
+                    s.get("decision", ""),
+                    json.dumps(s.get("evidence_ids", [])),
+                    s.get("ts", _now()),
+                ),
+            )
+        c.commit()
+
+
+def _rows_to_spans(rows) -> List[Dict[str, Any]]:
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["evidence_ids"] = json.loads(d.get("evidence_ids") or "[]")
+        out.append(d)
+    return out
+
+
+def get_traces_by_task(task_id: str) -> List[Dict[str, Any]]:
+    c = _connect()
+    return _rows_to_spans(
+        c.execute("SELECT * FROM traces WHERE task_id=? ORDER BY seq", (task_id,)).fetchall()
+    )
+
+
+def get_traces_by_report(report_id: str) -> List[Dict[str, Any]]:
+    c = _connect()
+    return _rows_to_spans(
+        c.execute(
+            "SELECT * FROM traces WHERE report_id=? ORDER BY seq", (report_id,)
+        ).fetchall()
+    )
+
+
+# ── reader feedback (human correction rate) ───────────────────────────────────
+def save_report_feedback(
+    report_id: str, edited_blocks: int, total_blocks: int, data: Dict[str, Any]
+) -> None:
+    with _LOCK:
+        c = _connect()
+        c.execute(
+            "INSERT OR REPLACE INTO report_feedback(report_id,edited_blocks,total_blocks,"
+            "data,updated_at) VALUES(?,?,?,?,?)",
+            (report_id, edited_blocks, total_blocks, json.dumps(data), _now()),
+        )
+        c.commit()
