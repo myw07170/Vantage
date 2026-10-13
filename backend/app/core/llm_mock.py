@@ -55,7 +55,9 @@ def _result(kind: str, context: dict):
         brands = list(dict.fromkeys(str(b).strip() for b in context.get("brands", []) if str(b).strip()))
         subject = brands[0] if brands else str(context.get("query", "")).strip()
         if kind == "scope":
-            return {"subject": subject, "domain": "", "competitors": brands[1:]}
+            from app.core.research_scope import is_category
+            return {"subject": subject, "subject_type": "category" if is_category(subject) else "product" if brands else "unknown",
+                    "domain": "", "competitors": brands[1:]}
         return {
             "subject": subject, "category": "", "brands": brands,
             "focus": context.get("focus") or ["Feature comparison", "Pricing strategy", "User sentiment"],

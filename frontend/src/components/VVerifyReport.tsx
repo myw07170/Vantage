@@ -119,6 +119,15 @@ export function VVerifyReport({ review }: { review?: VerifyReview }) {
         </div>
       )}
 
+      {review.review_complete === false && (
+        <p className="mt-3 text-tag text-warn-deep">Editorial review is incomplete. This report has not passed review.</p>
+      )}
+      {Object.keys(review.recheck_status ?? {}).length > 0 && (
+        <div className="mt-3 text-tag text-ink-2">
+          Rewrite recheck: {Object.entries(review.recheck_status ?? {}).map(([section, status]) => `${section}: ${{ pending: 'awaiting review', passed: 'review passed', open: 'issues remain', unavailable: 'review not completed' }[status]}`).join(' · ')}
+        </div>
+      )}
+
       {open.length > 0 && (
         <div className="mt-4">
           <div

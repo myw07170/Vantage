@@ -41,7 +41,7 @@ async def test_scope_restore_reconnect_feedback_and_subscription(api):
     assert detail["clarifyQuestions"] == task["clarifyQuestions"]
     assert detail["query"] == "Notion vs Obsidian"
     assert (await api.post(f"/api/tasks/{tid}/clarify", json={"answers": {
-        "competitors": ["Obsidian"], "_mode": "expert", "_subscription_id": "bogus"}})).status_code == 200
+        "competitors": ["Notion", "Obsidian"], "scope_confirmed": True, "_mode": "expert", "_subscription_id": "bogus"}})).status_code == 200
     first = await api.get(f"/api/tasks/{tid}/stream")
     assert "event: done" in first.text
     report = db.list_reports()[0]
@@ -75,6 +75,18 @@ async def test_scope_restore_reconnect_feedback_and_subscription(api):
     assert (await api.get(f"/api/tasks/{tid}/stream")).status_code == 410
 
 
+async def test_scope_must_be_confirmed_before_stream_can_start(api):
+    task = (await api.post("/api/tasks", json={"query": "Notion vs Obsidian"})).json()
+    tid = task["taskId"]
+    assert (await api.get(f"/api/tasks/{tid}/stream")).status_code == 409
+    assert db.get_task(tid)["status"] == "created"
+    invalid = await api.post(f"/api/tasks/{tid}/clarify", json={"answers": {
+        "competitors": ["AI coding assistant market", "Notion"], "scope_confirmed": True}})
+    assert invalid.status_code == 422 and "specific research product" in invalid.json()["detail"]
+    detail = (await api.get(f"/api/tasks/{tid}")).json()
+    assert detail["status"] == "created" and not detail["answers"].get("scope_confirmed")
+
+
 async def test_two_subscribers_share_job_and_disconnected_subscriber_does_not_cancel(offline):
     started, finish = asyncio.Event(), asyncio.Event()
     calls = []
@@ -88,6 +100,7 @@ async def test_two_subscribers_share_job_and_disconnected_subscriber_does_not_ca
         yield {"type": "done", "data": {"reportId": "r_single"}}
     task = pipeline.create_task("Notion vs Obsidian", "quick")
     tid = task["taskId"]
+    assert pipeline.submit_clarify(tid, {"competitors": ["Notion", "Obsidian"], "scope_confirmed": True})["ok"]
     runner = TaskRunner(fake)
     one, two = runner.subscribe(tid), runner.subscribe(tid)
     try:
@@ -117,6 +130,7 @@ async def test_failure_and_shutdown_are_terminal_and_not_retried(offline):
         yield {"type": "progress", "data": {}}
         raise RuntimeError("Provider unavailable")
     tid = pipeline.create_task("Notion", "quick")["taskId"]
+    assert pipeline.submit_clarify(tid, {"competitors": ["Notion", "Obsidian"], "scope_confirmed": True})["ok"]
     runner = TaskRunner(failing)
     events = [e async for e in runner.subscribe(tid)]
     assert events[-1]["type"] == "error" and db.get_task(tid)["status"] == "failed"
@@ -126,6 +140,7 @@ async def test_failure_and_shutdown_are_terminal_and_not_retried(offline):
         yield {"type": "progress", "data": {}}
         await asyncio.Event().wait()
     tid = pipeline.create_task("Obsidian", "quick")["taskId"]
+    assert pipeline.submit_clarify(tid, {"competitors": ["Obsidian", "Notion"], "scope_confirmed": True})["ok"]
     runner = TaskRunner(waiting)
     stream = runner.subscribe(tid)
     await anext(stream)
@@ -137,6 +152,7 @@ async def test_failure_and_shutdown_are_terminal_and_not_retried(offline):
 
 async def test_restart_marks_abandoned_running_tasks(offline):
     tid = pipeline.create_task("Notion", "quick")["taskId"]
+    assert pipeline.submit_clarify(tid, {"competitors": ["Notion", "Obsidian"], "scope_confirmed": True})["ok"]
     assert db.claim_task(tid)
     from app import main
     async with main.lifespan(main.app):
@@ -146,6 +162,7 @@ async def test_restart_marks_abandoned_running_tasks(offline):
 
 async def test_shutdown_before_worker_start_releases_reserved_job(offline):
     tid = pipeline.create_task("Notion", "quick")["taskId"]
+    assert pipeline.submit_clarify(tid, {"competitors": ["Notion", "Obsidian"], "scope_confirmed": True})["ok"]
     runner = TaskRunner()
     stream = runner.subscribe(tid)
     await runner.close()
@@ -157,6 +174,7 @@ async def test_fatal_model_errors_never_save_report(api, monkeypatch):
     from app.core.config import Settings
     from app.core.ratelimit import DailyQuotaExhausted
     tid = pipeline.create_task("Notion vs Obsidian", "quick")["taskId"]
+    assert pipeline.submit_clarify(tid, {"competitors": ["Notion", "Obsidian"], "scope_confirmed": True})["ok"]
     def fatal(*args, **kwargs):
         raise DailyQuotaExhausted("Daily quota exhausted")
     monkeypatch.setattr(pipeline, "chat_json", fatal)
@@ -171,13 +189,14 @@ async def test_fatal_model_errors_never_save_report(api, monkeypatch):
             raise error
         monkeypatch.setattr(pipeline, "chat_json", auth)
         with pytest.raises(httpx.HTTPStatusError):
-            pipeline._plan_research("Notion", {})
+            pipeline._plan_research("Notion", {"_confirmed_products": ["Notion", "Obsidian"]})
     monkeypatch.setattr(pipeline, "_settings", Settings(_env_file=None, llm_provider="openai", openai_api_key=""))
     assert (await api.post("/api/tasks", json={"query": "Notion"})).status_code == 503
 
 
 async def test_entire_failed_generation_is_not_reported_as_success(api, monkeypatch):
     tid = pipeline.create_task("Notion vs Obsidian", "quick")["taskId"]
+    assert pipeline.submit_clarify(tid, {"competitors": ["Notion", "Obsidian"], "scope_confirmed": True})["ok"]
     monkeypatch.setattr(pipeline, "_write_single_section", lambda *a, **kw: {
         "paragraphs": ["This section could not be generated."], "highlights": [], "key_takeaway": ""})
     events = await api.get(f"/api/tasks/{tid}/stream")

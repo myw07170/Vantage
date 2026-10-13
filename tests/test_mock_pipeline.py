@@ -12,7 +12,7 @@ from app.core import db, llm, orchestrator as pipeline
 async def _run(mode="quick"):
     task = pipeline.create_task("Notion vs Obsidian", mode)
     pipeline.submit_clarify(task["taskId"], {
-        "competitors": ["Notion", "Obsidian"],
+        "competitors": ["Notion", "Obsidian"], "scope_confirmed": True,
         "focus": ["Feature comparison", "Pricing strategy", "User sentiment"],
     })
     events = [ev async for ev in pipeline.run_pipeline(task["taskId"])]

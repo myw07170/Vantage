@@ -207,7 +207,9 @@ def get_task(task_id: str):
             "status": task["status"], "reportId": task.get("report_id"),
             "error": task["error"], "terminalSeq": task["terminal_seq"],
             "clarifyQuestions": clar.get("_questions", []),
-            "answers": {k: v for k, v in clar.items() if not k.startswith("_")}}
+            "answers": {"competitors": (
+                [clar["_scope"]["subject"]] if (clar.get("_scope") or {}).get("subject_type") == "product" else []
+            ), **{k: v for k, v in clar.items() if not k.startswith("_")}}}
 
 
 class ClarifyBody(BaseModel):
@@ -220,7 +222,7 @@ def post_clarify(task_id: str, body: ClarifyBody):
         raise HTTPException(404, "Task not found.")
     result = submit_clarify(task_id, body.answers)
     if not result["ok"]:
-        raise HTTPException(409, result["message"])
+        raise HTTPException(result.get("status_code", 409), result["message"])
     return result
 
 

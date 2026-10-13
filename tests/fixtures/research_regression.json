@@ -1,0 +1,38 @@
+{
+  "report_id": "r_219840cc",
+  "confirmed_products": [
+    "Claude Code",
+    "Codex",
+    "GitHub Copilot",
+    "Cursor"
+  ],
+  "incorrect_brands": [
+    "AI coding assistant market",
+    "Claude Code",
+    "Codex",
+    "GitHub Copilot",
+    "Cursor",
+    "AI Coding Assistant"
+  ],
+  "complete_paragraph": "The AI coding assistant market in 2026 is not converging on a single dominant design; it is bifurcating along an architectural fault line between volume-driven completion tools and high-ARPU agentic platforms. GitHub Copilot’s 15 million paying users and approximately $1.8 billion in annualized revenue as of April 2026 establish it as the undisputed category incumbent, but its $19/month individual pricing reveals a strategic choice to commoditize basic code completion rather than compete for autonomous workflows [e_40b9cbe1]. This volume-first motion secures distribution but cedes the most lucrative layer of developer spend — multi-step, terminal-native agentic execution — to challengers who architect their products around capability ceilings rather than friction reduction. The base rate for platform shifts suggests that incumbents optimized for low-friction adoption historically struggle to migrate upmarket when the underlying interaction model changes from suggestion to autonomy.",
+  "misclassified_source": {
+    "evidence_id": "e_40b9cbe1",
+    "source_url": "https://www.vaasblock.com/ai/ai-coding-assistants-market-github-copilot-cursor-2026/",
+    "source_type": "official",
+    "title": "AI Coding Assistants Hit $4B in Revenue - VaaSBlock",
+    "excerpt": "GitHub Copilot crossed 15 million paying users in April 2026, generating approximately $1.8 billion in annualised revenue on its $19/month individual and $39/seat enterprise pricing. Cursor, the AI-native code editor that launched in 2023, reached approximately 800,000 paying sub",
+    "captured_at": "2026-10-13T18:34:47Z",
+    "credibility": 90,
+    "collected_by": "L1-036",
+    "screenshot_path": "",
+    "image_urls": [
+      "https://www.vaasblock.com/wp-content/uploads/ai-coding-assistants-market-github-copilot-cursor-2026-1.webp",
+      "https://www.vaasblock.com/wp-content/uploads/ben-pp-1.webp",
+      "https://www.vaasblock.com/wp-content/uploads/andy-pp-6.webp"
+    ],
+    "lang": "en",
+    "brand": "AI coding assistant market",
+    "domain": "vaasblock.com",
+    "freshness_days": 0
+  }
+}

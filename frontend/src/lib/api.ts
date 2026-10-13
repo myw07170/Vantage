@@ -85,16 +85,16 @@ export async function fetchTask(taskId: string): Promise<TaskDetail | null> {
 export async function submitClarify(
   taskId: string,
   answers: Record<string, unknown>,
-): Promise<{ ok: boolean }> {
-  return safeJson(
-    `/api/tasks/${taskId}/clarify`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answers }),
-    },
-    { ok: false },
-  )
+): Promise<{ ok: boolean; message?: string }> {
+  try {
+    return await safeJson<{ ok: boolean; message?: string }>(
+      `/api/tasks/${taskId}/clarify`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers }) },
+    )
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : 'Could not confirm research scope.' }
+  }
 }
 
 export async function fetchReport(reportId: string): Promise<Report | null> {

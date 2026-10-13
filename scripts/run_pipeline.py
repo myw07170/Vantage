@@ -35,6 +35,8 @@ async def main() -> int:
     ap.add_argument("--mode", default="quick", choices=["quick", "deep", "expert"])
     ap.add_argument("--verbose", action="store_true", help="print every event")
     ap.add_argument("--out", default="", help="where to write the report JSON")
+    ap.add_argument("--products", nargs="+", help="Exact products to confirm, including the primary product")
+    ap.add_argument("--focus", nargs="+", default=["Feature comparison", "Pricing strategy", "User sentiment"])
     args = ap.parse_args()
 
     settings = get_settings()
@@ -64,17 +66,22 @@ async def main() -> int:
          if q["id"] == "competitors"),
         [],
     )
-    submit_clarify(
+    confirmation = submit_clarify(
         task_id,
         {
-            "competitors": competitors[:3],
-            "focus": ["Feature comparison", "Pricing strategy", "User sentiment"],
+            "competitors": args.products or competitors[:3],
+            "scope_confirmed": True,
+            "focus": args.focus,
             "perspective": "Product manager",
             "market": "United States",
             "user": "SMB teams",
             "freshness": "Within the last year",
         },
     )
+
+    if not confirmation["ok"]:
+        print("FAIL scope confirmation:", confirmation["message"])
+        return 1
 
     counts: dict[str, int] = {}
     report_id = ""

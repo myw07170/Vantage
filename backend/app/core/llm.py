@@ -232,12 +232,14 @@ def chat_json(
     messages: list[dict], temperature: float = 0.3, max_tokens: int = 2048,
     model: str | None = None, *, purpose: str = "", schema: Optional[Any] = None,
     task_kind: str = "", mock_context: dict | None = None,
+    evidence_ids: Optional[list] = None,
 ) -> Optional[Any]:
     """Parse JSON, returning None for unparseable output; transport errors raise."""
     raw = chat(
         messages, temperature=temperature, max_tokens=max_tokens, model=model,
         purpose=purpose, response_mime_type="application/json", response_schema=schema,
         task_kind=task_kind, mock_context=mock_context,
+        evidence_ids=evidence_ids,
     )
     try:
         data = json.loads(raw)

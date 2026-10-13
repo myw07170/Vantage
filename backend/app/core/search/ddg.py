@@ -83,6 +83,7 @@ def search(
                 "snippet": body[:500],
                 "source": _domain(url),
                 "captured_at": now_iso(),
+                "published_at": None,
                 "content": None,  # snippets only — the fetcher must do the work
             }
         )

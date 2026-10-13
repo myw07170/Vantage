@@ -449,7 +449,7 @@ def _report_digest(
     titles: Dict[str, str],
     order: Sequence[str],
     notes: Optional[Dict[str, str]] = None,
-    body_chars: int = 700,
+    body_chars: Optional[int] = 700,
 ) -> str:
     out = []
     for sid in order:
@@ -462,12 +462,14 @@ def _report_digest(
             f"[{sid}] {titles.get(sid, sid)}\n"
             + (f"  note: {note}\n" if note else "")
             + f"  takeaway: {st.get('key_takeaway') or '(none)'}\n"
-            f"  body: {body[:body_chars]}"
+            f"  body: {body if body_chars is None else body[:body_chars]}"
+            + ("\n  [SUMMARY ONLY: remaining body omitted; do not assess truncation or missing citations from this summary.]"
+               if body_chars is not None and len(body) > body_chars else "")
         )
     return "\n\n".join(out) or "(no sections)"
 
 
-def llm_report_review(
+def _review_batch(
     query: str,
     brands: List[str],
     sections: Dict[str, Dict[str, Any]],
@@ -478,14 +480,16 @@ def llm_report_review(
     model: Optional[str] = None,
     section_notes: Optional[Dict[str, str]] = None,
     persona: str = "",
+    evidence: Optional[List[Any]] = None,
+    global_summary: str = "",
 ) -> Dict[str, Any]:
     """A copy editor's read of the finished document.
 
     Rules catch dead citations and broken structure. They cannot tell whether the
     conclusion in section 7 contradicts the one in section 1, or whether a
     confident number is actually backed by anything, so this asks a model to read
-    the whole report at once — the only stage that ever sees it whole. Falls back
-    to a rules-only verdict when the call fails.
+    complete chapter batches with source context. Failed reviews are marked
+    incomplete rather than treated as successful rules-only reviews.
 
     `persona` is the quality officer's preamble, built by the caller so this
     module stays independent of the roster.
@@ -500,7 +504,7 @@ def llm_report_review(
         )
         or "(no claims)"
     )
-    open_rule_findings = [f for f in vr.open][:6]
+    open_rule_findings = [f for f in vr.open if f.section_id in sections]
     rule_lines = (
         "\n".join(f"- [{f.severity}] {f.detail}" for f in open_rule_findings)
         or "(rules found nothing outstanding)"
@@ -517,7 +521,15 @@ def llm_report_review(
             "cross-section consistency was not."
         ),
         "findings": [],
+        "review_complete": False,
     }
+
+    from app.core.evidence_context import select_evidence, evidence_digest, value
+    priority = [eid for st in sections.values() for eid in re.findall(r"e_[0-9a-f]{4,20}", str(st))]
+    supplied = select_evidence(evidence or [], brands=brands,
+                               dimensions=[titles.get(sid, sid) for sid in order],
+                               limit=20, priority_ids=priority)
+    source_context = evidence_digest(supplied, brands=brands)
 
     try:
         data = chat_json(
@@ -531,8 +543,10 @@ def llm_report_review(
                             "intelligence team.\n\n"
                         )
                         + "You are reading the finished report before it ships. "
-                        "You are the only reviewer who sees every section at "
-                        "once, so cross-section problems are yours to catch.\n\n"
+                        "Full text is supplied for the named sections in this batch. Other sections "
+                        "are explicitly labeled summaries; do not infer truncation or missing "
+                        "citations from summaries. Source excerpts are bounded retrieval context, "
+                        "not complete websites. Inspect prior findings against the actual new draft.\n\n"
                         "Look for, in priority order:\n"
                         "1. CONTRADICTION — two sections reaching opposite verdicts "
                         "on the same question (who leads, who is cheaper, where the "
@@ -575,9 +589,11 @@ def llm_report_review(
                         f"Research topic: {query}\n"
                         f"Competitors: {', '.join(brands)}\n\n"
                         f"Claims the analysis established:\n{claim_lines}\n\n"
-                        f"Defects the automated checks already found:\n{rule_lines}\n\n"
+                        f"Prior findings to check against this draft (rules and editorial):\n{rule_lines}\n\n"
                         f"The report as written:\n\n"
-                        f"{_report_digest(sections, titles, order, section_notes)}"
+                        f"{_report_digest(sections, titles, order, section_notes, body_chars=None)}\n\n"
+                        f"Related source excerpts:\n{source_context}\n\n"
+                        f"Other sections (SUMMARY ONLY):\n{global_summary}"
                     ),
                 },
             ],
@@ -585,21 +601,69 @@ def llm_report_review(
             temperature=0.2,
             model=model,
             purpose="Verify the written report: citations, consistency, support",
+            evidence_ids=[value(e, "evidence_id") for e in supplied],
             task_kind="report_review",
             mock_context={"rule_review": fallback},
         )
-        if isinstance(data, dict) and (data.get("scores") or data.get("findings")):
+        if isinstance(data, dict) and data.get("verdict") in ("pass", "revise"):
             scores = {str(k): _clamp(v) for k, v in (data.get("scores") or {}).items()}
+            findings = _coerce_findings(data.get("findings"), sections)
             return {
                 "verdict": "revise" if str(data.get("verdict")) == "revise" else "pass",
                 "scores": scores or fallback["scores"],
                 "review": str(data.get("review") or fallback["review"]),
-                "findings": _coerce_findings(data.get("findings"), sections),
+                "findings": findings,
+                "review_complete": data.get("verdict") in ("pass", "revise")
+                    and isinstance(data.get("findings"), list)
+                    and len(findings) == len(data["findings"])
+                    and (data.get("verdict") == "pass" or bool(data["findings"])),
             }
     except Exception as exc:
         raise_if_fatal(exc)
         pass
     return fallback
+
+
+def llm_report_review(
+    query, brands, sections, titles, order, claims, vr, model=None,
+    section_notes=None, persona="", evidence=None, review_ids=None,
+):
+    """Read complete chapters in bounded batches; summaries only give context."""
+    targets = [sid for sid in (review_ids if review_ids is not None else order) if sid in sections]
+    batches, batch, size = [], [], 0
+    for sid in targets:
+        length = len(str(sections[sid]))
+        if batch and (size + length > 24000 or len(batch) >= 3):
+            batches.append(batch)
+            batch, size = [], 0
+        batch.append(sid)
+        size += length
+    if batch:
+        batches.append(batch)
+    results, section_status = [], {}
+    for ids in batches:
+        subset = {sid: sections[sid] for sid in ids}
+        other_ids = [sid for sid in order if sid not in ids]
+        result = _review_batch(
+            query, brands, subset, titles, ids, claims, vr, model,
+            section_notes, persona, evidence,
+            _report_digest(sections, titles, other_ids, section_notes, body_chars=350),
+        )
+        results.append(result)
+        for sid in ids:
+            section_status[sid] = ("unavailable" if not result.get("review_complete") else
+                                   "open" if any(f["section_id"] == sid for f in result.get("findings", [])) else "passed")
+    complete = bool(results) and all(r.get("review_complete") for r in results)
+    scores = {key: round(sum(r.get("scores", {}).get(key, 0) for r in results) / len(results))
+              for key in (DIM_CITATION, DIM_CONSISTENCY, DIM_SUPPORT, DIM_EDITORIAL)} if results else {}
+    return {
+        "verdict": "pass" if complete and all(r["verdict"] == "pass" for r in results) else "revise",
+        "scores": scores,
+        "review": "\n\n".join(r.get("review", "") for r in results),
+        "findings": [f for r in results for f in r.get("findings", [])],
+        "review_complete": complete,
+        "section_status": section_status,
+    }
 
 
 def _rule_scores(vr: VerifyReport) -> Dict[str, int]:
@@ -713,7 +777,7 @@ def verdict_of(vr: VerifyReport, review: Dict[str, Any]) -> str:
     `flagged` — major defects survived the rewrites and the reader is told so,
     which is the honest outcome when the budget runs out mid-problem.
     """
-    if vr.majors:
+    if vr.open or review.get("review_complete") is False:
         return "flagged"
     if vr.findings or (review.get("findings") or []):
         return "revised"

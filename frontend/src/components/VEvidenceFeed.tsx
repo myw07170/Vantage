@@ -24,7 +24,7 @@ export function VEvidenceCard({
   const label = SOURCE_LABEL[ev.source_type] ?? ev.source_type
   const cls = SOURCE_STYLE[ev.source_type] ?? 'bg-primary-tint text-primary-deep'
   const cred = Math.round(ev.credibility)
-  const fresh = freshnessLabel(ev.freshness_days)
+  const fresh = ev.published_at ? freshnessLabel(ev.freshness_days) || 'Publication date available' : 'Publication date unknown'
   return (
     <motion.a
       id={`ev-${ev.evidence_id}`}

@@ -94,10 +94,6 @@ def evaluate_quality(
             if f in fields_present and any(k in low for k in kws):
                 covered = True
                 break
-        # Fall back to "any valid claim touches this" rather than reporting a
-        # false gap when the focus wording does not match a known field.
-        if not covered and fields_present:
-            covered = True
         qr.coverage_by_dimension[dim] = covered
     covered_dims = sum(1 for v in qr.coverage_by_dimension.values() if v)
     qr.dimension_coverage_rate = round(covered_dims / (len(focus) or 1), 3)

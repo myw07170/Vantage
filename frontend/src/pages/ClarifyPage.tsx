@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, SkipForward } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import type { ClarifyQuestion } from '../types'
 import { fetchTask, submitClarify } from '../lib/api'
 import { VSunGlow } from '../components/ui'
@@ -19,14 +19,14 @@ export default function ClarifyPage() {
   const { state } = useLocation() as { state: NavState | null }
   const [query, setQuery] = useState(state?.query ?? '')
   const [questions, setQuestions] = useState<ClarifyQuestion[]>(state?.clarify ?? [])
-  const [loading, setLoading] = useState(!state?.clarify)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [answers, setAnswers] = useState<Record<string, unknown>>({})
   const [submitting, setSubmitting] = useState(false)
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    if (state?.clarify || !taskId) return
+    if (!taskId) return
     let disposed = false
     void fetchTask(taskId).then((task) => {
       if (disposed) return
@@ -46,7 +46,7 @@ export default function ClarifyPage() {
       }
     })
     return () => { disposed = true }
-  }, [taskId, state, navigate])
+  }, [taskId, navigate])
 
   function setSingle(qid: string, val: string) {
     setAnswers((a) => ({ ...a, [qid]: val }))
@@ -57,6 +57,7 @@ export default function ClarifyPage() {
       const cur = (a[qid] as string[]) ?? []
       return {
         ...a,
+        scope_confirmed: false,
         [qid]: cur.includes(val) ? cur.filter((v) => v !== val) : [...cur, val],
       }
     })
@@ -74,7 +75,7 @@ export default function ClarifyPage() {
       const cur = (a[qid] as string[]) ?? []
       const merged = [...cur]
       for (const it of items) if (!merged.includes(it)) merged.push(it)
-      return { ...a, [qid]: merged }
+      return { ...a, scope_confirmed: false, [qid]: merged }
     })
     setCustomInputs((c) => ({ ...c, [qid]: '' }))
   }
@@ -83,10 +84,20 @@ export default function ClarifyPage() {
     if (submitting || !taskId) return
     setSubmitting(true)
     setError('')
+    if (answers.scope_confirmed !== true || ((answers.competitors as string[]) ?? []).length < 2) {
+      setError('Select at least two specific products and confirm the final list.')
+      setSubmitting(false)
+      return
+    }
+    if ((customInputs.competitors ?? '').trim()) {
+      setError('Add your typed product to the list before confirming.')
+      setSubmitting(false)
+      return
+    }
     try {
       const result = await submitClarify(taskId, answers)
       if (result.ok) navigate(`/workspace/${taskId}`, { state: { query } })
-      else setError('Could not save your answers. Try again before starting research.')
+      else setError(result.message ?? 'Could not save your answers. Try again before starting research.')
     } finally {
       setSubmitting(false)
     }
@@ -207,18 +218,24 @@ export default function ClarifyPage() {
           ))}
         </motion.div>
 
+        <div className="mt-6 rounded-card border border-line bg-card p-5">
+          <p className="text-aux font-semibold text-ink">Final research products</p>
+          <p className="mt-2 text-body text-ink-2">
+            {((answers.competitors as string[]) ?? []).join(' · ') || 'Select specific products above.'}
+          </p>
+          <p className="mt-2 text-tag text-ink-3">The research will use exactly this list. Market categories are not products.</p>
+          <label className="mt-4 flex items-center gap-2 text-aux text-ink">
+            <input type="checkbox" checked={answers.scope_confirmed === true}
+              onChange={(e) => setAnswers((a) => ({ ...a, scope_confirmed: e.target.checked }))} />
+            I confirm these are the products to compare.
+          </label>
+        </div>
+
         <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
           {error && <p role="alert" className="w-full text-aux text-risk-deep">{error}</p>}
           <button
             onClick={go}
-            disabled={submitting || questions.length === 0}
-            className="inline-flex items-center gap-1.5 text-aux text-ink-3 transition-colors hover:text-ink-2"
-          >
-            <SkipForward size={15} /> Skip and start now
-          </button>
-          <button
-            onClick={go}
-            disabled={submitting || questions.length === 0}
+            disabled={submitting || questions.length === 0 || answers.scope_confirmed !== true || ((answers.competitors as string[]) ?? []).length < 2}
             className="inline-flex h-12 items-center justify-center gap-2 rounded-btn bg-primary-deep px-6 font-medium text-white shadow-card transition-all hover:bg-primary-deeper hover:shadow-float active:scale-95 disabled:opacity-50"
           >
             {submitting ? 'Assembling the team…' : 'Start research'}
