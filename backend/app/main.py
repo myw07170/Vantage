@@ -30,7 +30,7 @@ from app.core.orchestrator import (
     submit_scope,
     task_details,
 )
-from app.data import expert_by_id, load_experts
+from app.data import active_experts, expert_by_id, load_experts, load_industry_modules
 from app.core.tasks import TaskRunner, TaskUnavailable
 
 settings = get_settings()
@@ -70,7 +70,7 @@ def root():
         "llm_configured": settings.llm_configured,
         "llm_provider": settings.llm_provider,
         "is_mock": settings.is_mock,
-        "experts": len(load_experts()),
+        "experts": len(active_experts()),
     }
 
 
@@ -128,16 +128,31 @@ def search_endpoint(q: str, num: int = 10, site: Optional[str] = None):
 
 # ── Experts ───────────────────────────────────────────────────────────────────
 @app.get("/api/experts")
-def list_experts():
-    return load_experts()
+def list_experts(include_archived: bool = False):
+    stats = {s["expert_id"]: s for s in db.expert_workload()}
+    return [_expert_profile(e, stats.get(e["id"]))
+            for e in (load_experts() if include_archived else active_experts())]
+
+
+def _expert_profile(expert: dict, stats: Optional[dict]) -> dict:
+    return {**expert, "stats": {
+        **expert.get("stats", {}),
+        "missions": 0, "claims_authored": 0, "evidence_collected": 0, "last_active": "",
+        **(stats or {}),
+    }}
+
+
+@app.get("/api/industry-modules")
+def list_industry_modules():
+    return load_industry_modules()
 
 
 @app.get("/api/experts/workload")
-def experts_workload():
+def experts_workload(include_archived: bool = False):
     """Leaderboard of real accumulated missions, claims and evidence."""
     stats = {s["expert_id"]: s for s in db.expert_workload()}
     out = []
-    for e in load_experts():
+    for e in (load_experts() if include_archived else active_experts()):
         s = stats.get(e["id"])
         out.append(
             {
@@ -165,14 +180,7 @@ def get_expert(eid: str):
     if not e:
         raise HTTPException(404, "Expert not found.")
     stat = next((s for s in db.expert_workload() if s["expert_id"] == eid), None)
-    return {
-        **e,
-        "stats": stat
-        or {
-            "missions": 0, "claims_authored": 0,
-            "evidence_collected": 0, "last_active": "",
-        },
-    }
+    return _expert_profile(e, stat)
 
 
 # ── Tasks and clarification ───────────────────────────────────────────────────

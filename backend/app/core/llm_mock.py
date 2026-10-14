@@ -78,9 +78,8 @@ def _result(kind: str, context: dict):
         scores = context.get("scores", {})
         candidates = sorted(context.get("candidates", []),
                             key=lambda e: (-scores.get(e["id"], 0), e["id"]))
-        picked = [e for e in candidates if e["level"] == "L2"][:2]
-        picked += [e for e in candidates if e["level"] == "L1"][:4]
-        return {"members": [{"id": e["id"], "reason": "[MOCK] Deterministic relevance ranking."}
+        picked = [e for e in candidates if e["level"] == "L2"][:context.get("min_strategy", 2)]
+        return {"members": [{"id": e["id"], "reason": "[MOCK] " + e.get("work_instructions", {}).get("responsibilities", ["Matched to research priorities."])[0]}
                             for e in picked]}
     if kind == "analyze":
         authors = context.get("authors") or ["L2-001"]

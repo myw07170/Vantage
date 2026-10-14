@@ -9,9 +9,14 @@ import { num } from '../lib/format'
 import { ACCENT_CHIP, ACCENT_TEXT, LEVEL_ACCENT } from '../lib/accents'
 
 const LEVEL_LABEL: Record<string, string> = {
-  L1: 'Specialist tier · industry and function',
+  L1: 'Specialist tier · evidence and user feedback',
   L2: 'Strategy tier · method advisors',
   L3: 'Decision tier · direction and sign-off',
+}
+
+const WORK_LABEL: Record<string, string> = {
+  responsibilities: 'Responsibilities', preferred_sources: 'Preferred evidence', checks: 'Research checks',
+  deliverables: 'Deliverables', limits: 'Judgment boundaries',
 }
 
 export default function ExpertDetailPage() {
@@ -40,7 +45,7 @@ export default function ExpertDetailPage() {
     .slice(0, 6)
 
   return (
-    <div className="mx-auto max-w-4xl px-8 py-8">
+    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-8">
       <button
         onClick={() => navigate('/experts')}
         className="inline-flex items-center gap-1.5 text-aux text-ink-2 transition-colors hover:text-primary-deep"
@@ -73,14 +78,19 @@ export default function ExpertDetailPage() {
             >
               {expert.level}
             </span>
+            {expert.catalog_status === 'archived' && <span className="rounded-chip bg-paper px-2.5 py-1 text-tag text-ink-2">Archived analyst</span>}
           </div>
           <div className="mt-1 text-body text-primary-deep">{expert.role_title}</div>
-          <div className="text-tag text-ink-3">{LEVEL_LABEL[expert.level]}</div>
+          <div className="text-tag text-ink-3">{expert.catalog_status === 'archived'
+            ? 'Historical analyst profile' : LEVEL_LABEL[expert.level]}</div>
           <p className="mt-3 text-aux leading-relaxed text-ink-2">{expert.one_liner}</p>
         </div>
       </motion.div>
 
       <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+        {expert.catalog_status === 'archived' && <p className="text-aux text-ink-2 md:col-span-2">
+          This profile is retained for historical reports. New research uses core analysts and industry modules.
+        </p>}
         <VCard hover={false}>
           <div className="flex items-center gap-2 text-aux font-semibold text-ink">
             <Sparkles size={16} className={ACCENT_TEXT.blue} /> Core skills
@@ -122,11 +132,19 @@ export default function ExpertDetailPage() {
           </p>
         </VCard>
 
+        {expert.work_instructions && Object.entries(expert.work_instructions).map(([key, items]) =>
+          items.length > 0 && <VCard key={key} hover={false} className={key === 'responsibilities' ? 'md:col-span-2' : ''}>
+            <div className="text-aux font-semibold text-ink">{WORK_LABEL[key]}</div>
+            <ul className="mt-3 list-disc space-y-2 pl-4 text-aux leading-relaxed text-ink-2">
+              {items.map((item: string) => <li key={item}>{item}</li>)}
+            </ul>
+          </VCard>)}
+
         <VCard hover={false} className="md:col-span-2">
           <div className="flex items-center gap-2 text-aux font-semibold text-ink">
             <Award size={16} className={ACCENT_TEXT.pink} /> Track record
           </div>
-          <div className="mt-3 flex gap-8">
+          <div className="mt-3 grid grid-cols-3 gap-3">
             <div>
               <div className="font-serif text-h2 text-primary-deep">
                 {num(expert.stats.missions)}
@@ -135,9 +153,13 @@ export default function ExpertDetailPage() {
             </div>
             <div>
               <div className="font-serif text-h2 text-primary-deep">
-                {expert.stats.avg_evidence || '—'}
+                  {num(expert.stats.evidence_collected ?? 0)}
               </div>
-              <div className="text-tag text-ink-3">Avg. sources cited</div>
+              <div className="text-tag text-ink-3">Sources collected</div>
+            </div>
+            <div>
+              <div className="font-serif text-h2 text-primary-deep">{num(expert.stats.claims_authored ?? 0)}</div>
+              <div className="text-tag text-ink-3">Claims authored</div>
             </div>
           </div>
         </VCard>

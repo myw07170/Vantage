@@ -18,15 +18,19 @@ from app.core.personas import (
     MIN_L1,
     PERMANENT_L3,
     QUALITY,
+    PERMANENT_TEAM,
+    TEAM_BOUNDS,
     assign_stages,
     normalize_team,
     persona_block,
     score_roster,
     section_writer,
     shortlist,
+    select_industry_modules,
+    module_search_angles,
     team_block,
 )
-from app.data import expert_by_id, load_experts
+from app.data import active_experts, expert_by_id, load_experts, load_industry_modules
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROSTER = ROOT / "backend" / "app" / "data" / "experts.json"
@@ -106,7 +110,9 @@ def test_persona_block_carries_profile_and_guard():
     qc = expert_by_id(QUALITY)
     assert qc["name"] in block
     assert qc["role_title"] in block
-    assert "newsroom standards" in block  # from knowledge_base
+    assert "circular reporting" in block
+    assert "Deliver:" in block and "Boundary:" in block
+    assert qc["knowledge_base"] not in block  # display biography is not the execution prompt
     assert GROUNDING_GUARD in block
 
 
@@ -135,23 +141,17 @@ def test_team_block_names_every_member():
         ("AWS vs Azure vs GCP cloud infrastructure", "L1-007"),
     ],
 )
-def test_scoring_puts_the_right_industry_analyst_on_top(query, expected):
-    scores = score_roster(query, [], [])
-    industry = [
-        e for e in load_experts() if e["level"] == "L1" and e["group"] == "industry"
-    ]
-    top = max(industry, key=lambda e: scores[e["id"]])
-    assert top["id"] == expected
+def test_matching_puts_the_right_industry_module_on_top(query, expected):
+    assert select_industry_modules(query, [], [])[0]["legacy_expert_id"] == expected
 
 
-def test_shortlist_keeps_all_l2_and_trims_the_rest():
+def test_shortlist_contains_only_active_optional_strategy_roles():
     scores = score_roster("identity and access management", [], [])
     picked = shortlist(scores)
     ids = {e["id"] for e in picked}
-    assert {e["id"] for e in load_experts() if e["level"] == "L2"} <= ids
-    assert len(picked) == 9 + 8 + 6
-    assert len(picked) < len(load_experts())
-    assert "L1-037" in ids
+    assert ids == {e["id"] for e in active_experts() if e["level"] == "L2"}
+    assert len(picked) == 7
+    assert "L2-004" not in ids and "L2-008" not in ids
 
 
 # ── Composition repair ────────────────────────────────────────────────────────
@@ -211,13 +211,13 @@ def test_stages_route_to_the_purpose_built_specialist():
     assert stages["sentiment"] == "L1-030"    # not L1-032, the first function member
     assert stages["audit"] == stages["verify"] == QUALITY
     assert stages["intake"] == DIRECTOR
-    assert stages["industry"] == "L1-004"
+    assert stages["industry"] == "L2-001"
 
 
-def test_collect_falls_back_when_no_function_specialist_is_staffed():
+def test_fixed_collection_ownership_never_uses_archived_industry_roles():
     stages = assign_stages([*PERMANENT_L3, "L2-001", "L1-004"], [])
-    assert stages["collect"] == "L1-004"
-    assert stages["sentiment"] == "L1-004"
+    assert stages["collect"] == "L1-025"
+    assert stages["sentiment"] == "L1-030"
 
 
 def test_analyze_goes_to_the_advisor_matching_the_focus():
@@ -232,7 +232,7 @@ def test_sections_go_to_the_analyst_who_owns_the_subject():
     stages = assign_stages(members, [])
     assert section_writer("pricing", members, stages) == "L2-002"
     assert section_writer("risk", members, stages) == "L2-009"
-    assert section_writer("trend", members, stages) == "L1-008"
+    assert section_writer("trend", members, stages) == CHIEF_ANALYST
     # Unclaimed and team-independent sections stay with the chief analyst.
     assert section_writer("summary", members, stages) == CHIEF_ANALYST
     assert section_writer("feature", members, stages) == CHIEF_ANALYST
@@ -242,4 +242,71 @@ def test_section_writer_falls_back_when_the_specialist_is_not_staffed():
     members = [*PERMANENT_L3, "L2-001"]
     stages = assign_stages(members, [])
     assert section_writer("pricing", members, stages) == CHIEF_ANALYST
-    assert section_writer("trend", members, stages) == CHIEF_ANALYST
+    assert section_writer("trend", members, stages) == "L2-001"
+
+
+def test_core_catalog_and_archived_identities_are_separate():
+    assert len(active_experts()) == 12
+    assert len(load_experts()) == 52
+    assert len(load_industry_modules()) == 28
+    assert expert_by_id("L1-008")["catalog_status"] == "archived"
+    assert all(e["work_instructions"]["limits"] for e in active_experts())
+    root = ROOT / "frontend/public/assets/industry_modules.json"
+    assert json.loads(root.read_text(encoding="utf-8")) == load_industry_modules()
+    assert len({m["id"] for m in load_industry_modules()}) == 28
+
+
+@pytest.mark.parametrize("mode", ["quick", "deep", "expert"])
+def test_mode_bounds_repair_empty_and_overstaffed_teams(mode):
+    scores = score_roster("SaaS pricing and financial statements", [], [])
+    candidates = [{"id": e["id"], "reason": ""} for e in load_experts()]
+    candidates += [{"id": ["invalid"], "reason": ""}, {"id": "unknown"}, None]
+    minimum, maximum = TEAM_BOUNDS[mode]
+    for members, expected in (([], minimum), (candidates, maximum)):
+        team = normalize_team(members, scores, mode)
+        ids = _ids(team)
+        assert len(ids) == 5 + expected
+        assert len(set(ids)) == len(ids) and set(PERMANENT_TEAM) <= set(ids)
+        assert all(expert_by_id(eid)["catalog_status"] == "active" for eid in ids)
+        assert all(m["reason"] for m in team)
+
+
+@pytest.mark.parametrize("query, expected", [
+    ("pricing packaging and tier fencing", "L2-002"),
+    ("architecture scalability API integration", "L2-006"),
+    ("privacy regulatory compliance risk", "L2-009"),
+    ("financial statements unit economics valuation", "L2-005"),
+    ("user research personas segmentation", "L2-003"),
+])
+def test_strategy_matching_covers_core_decision_needs(query, expected):
+    scores = score_roster(query, [], [])
+    assert shortlist(scores)[0]["id"] == expected
+
+
+def test_industry_methods_no_match_two_matches_and_snapshot_isolation():
+    assert select_industry_modules("compare A and B", [], []) == []
+    modules = select_industry_modules("cloud infrastructure cybersecurity identity SSO", [], [])
+    assert len(modules) == 2
+    assert {m["legacy_expert_id"] for m in modules} == {"L1-007", "L1-037"}
+    modules[0]["checks"].append("a local edit")
+    assert all("a local edit" not in m["checks"] for m in load_industry_modules())
+
+
+def test_module_angles_fit_budget_and_preserve_recency():
+    modules = select_industry_modules("cloud infrastructure", [], [])[:1]
+    angles = module_search_angles(["product features", "pricing plans", "user reviews", "latest news"], modules, 4)
+    assert len(angles) == 4 and "latest news" in angles
+    assert set(modules[0]["search_angles"]) <= set(angles)
+    overlap = module_search_angles(["features", "pricing", "latest news", *modules[0]["search_angles"]], modules, 4)
+    assert set(modules[0]["search_angles"]) <= set(overlap) and len(set(overlap)) == len(overlap) == 4
+    assert module_search_angles(["pricing", "latest news"], [], 4) == ["pricing", "latest news"]
+    assert select_industry_modules("compare A and B", [], ["Feature comparison", "Pricing strategy", "User sentiment"]) == []
+
+
+def test_team_and_personal_prompts_include_actions_and_industry_checks():
+    modules = select_industry_modules("cloud infrastructure", [], [])
+    for block in (persona_block("L2-002", modules), team_block([DIRECTOR, "L2-002"], industry_modules=modules)):
+        assert "billing period" in block
+        assert modules[0]["checks"][0] in block
+        assert GROUNDING_GUARD in block and "American English" in block
+        assert "explicit market always takes precedence" in block

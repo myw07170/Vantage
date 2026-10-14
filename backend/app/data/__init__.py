@@ -1,4 +1,4 @@
-"""Loader for the 52-expert roster. Backend and frontend share one experts.json."""
+"""Core analysts, archived identities and reusable industry research modules."""
 from __future__ import annotations
 
 import json
@@ -15,6 +15,16 @@ def load_experts() -> list[dict]:
         return json.load(f)
 
 
+def active_experts() -> list[dict]:
+    return [e for e in load_experts() if e.get("catalog_status") == "active"]
+
+
+@lru_cache
+def load_industry_modules() -> list[dict]:
+    with open(_DATA.parent / "industry_modules.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 @lru_cache
 def _index() -> dict[str, dict]:
     """id -> record. Staffing and persona building look experts up in loops,
@@ -27,8 +37,8 @@ def expert_by_id(eid: str) -> Optional[dict]:
 
 
 def experts_by_level(level: str) -> list[dict]:
-    return [e for e in load_experts() if e["level"] == level]
+    return [e for e in active_experts() if e["level"] == level]
 
 
 def experts_by_group(group: str) -> list[dict]:
-    return [e for e in load_experts() if e["group"] == group]
+    return [e for e in active_experts() if e["group"] == group]

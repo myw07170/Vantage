@@ -9,8 +9,8 @@ import pytest
 from app.core import db, llm, orchestrator as pipeline
 
 
-async def _run(mode="quick"):
-    task = pipeline.create_task("Notion vs Obsidian", mode)
+async def _run(mode="quick", query="Notion vs Obsidian"):
+    task = pipeline.create_task(query, mode)
     assert pipeline.submit_scope(task["taskId"], "yes", task["scopeRevision"])["ok"]
     confirmed = pipeline.task_details(db.get_task(task["taskId"]))
     confirmed = pipeline.submit_clarify(task["taskId"], {
@@ -41,8 +41,10 @@ async def test_all_modes_complete_with_real_pipeline(offline, mode):
     events, report = await _run(mode)
     assert not [e for e in events if e["type"] == "error"]
     assert report is not None and report["mode"] == mode
+    assert {"quick": 6, "deep": 7, "expert": 8}[mode] == len(report["experts"])
+    assert {"L3-001", "L3-002", "L3-003", "L1-025", "L1-030"} <= set(report["experts"])
     assert report["is_mock"] is True and report["llm_provider"] == "mock"
-    assert report["subtitle"].startswith("[MOCK] 模拟报告")
+    assert report["subtitle"].startswith("[MOCK] Simulated report")
     assert len(report["evidence"]) >= 8 and len(report["claims"]) >= 3
     assert all(section.get("paragraphs") for section in report["sections"])
     assert offline.searches and offline.fetches
@@ -61,6 +63,41 @@ async def test_all_modes_complete_with_real_pipeline(offline, mode):
     assert db.list_reports()[0]["subtitle"].startswith("[MOCK]")
 
 
+async def test_industry_methods_survive_pipeline_rework_reload_and_refinement(offline):
+    _, report = await _run("deep", "Notion vs Obsidian for cloud infrastructure")
+    modules = report["industry_modules"]
+    assert modules and modules[0]["id"] == "cloud-infrastructure"
+    assert report["brands"] == ["Notion", "Obsidian"]
+    assert all(e.startswith("L") for e in report["experts"])
+    assert not ({m["legacy_expert_id"] for m in modules} & set(report["experts"]))
+    for brand in report["brands"]:
+        assert brand + " " + modules[0]["search_angles"][0] in offline.searches
+    for kind in ("dispatch", "analyze", "structured", "sentiment", "quotes", "quality_review", "write_section", "report_review", "sentiment_narrative"):
+        matching = [messages for task_kind, messages in offline.prompts if task_kind == kind]
+        assert matching, kind
+        assert all(modules[0]["checks"][0] in "\n".join(m["content"] for m in messages) for messages in matching)
+    assert db.get_report(report["id"])["industry_modules"] == modules
+    snapshot_check = "Check the frozen method used when this report was created."
+    report["industry_modules"][0]["checks"] = [snapshot_check]
+    db.save_report(report)
+    assert pipeline.refine_section(report["id"], "summary", ["Review the cloud cost assumptions"])["ok"]
+    assert offline.prompts[-1][0] == "refine_section"
+    assert snapshot_check in "\n".join(m["content"] for m in offline.prompts[-1][1])
+    assert db.get_report(report["id"])["industry_modules"][0]["checks"] == [snapshot_check]
+    assert sum(kind == "plan" for kind, _ in offline.operations) == 1
+    assert sum(kind == "dispatch" for kind, _ in offline.operations) == 1
+
+
+async def test_historical_report_without_modules_can_be_refined(offline):
+    _, report = await _run()
+    report.pop("industry_modules", None)
+    report["experts"].append("L1-008")
+    db.save_report(report)
+    result = pipeline.refine_section(report["id"], "summary", ["Explain the evidence gaps"])
+    assert result["ok"] and "L1-008" in result["report"]["experts"]
+    assert "industry_modules" not in result["report"]
+
+
 async def test_no_evidence_reports_collection_failure(offline, monkeypatch):
     monkeypatch.setattr(pipeline, "multi_search", lambda *args, **kwargs: [])
     monkeypatch.setattr(pipeline, "api_platforms", lambda: [])
@@ -72,8 +109,12 @@ async def test_no_evidence_reports_collection_failure(offline, monkeypatch):
 
 async def test_refine_and_rename_keep_mock_marker(offline):
     _, report = await _run()
+    # Normalize the historical localized label only during an explicit refinement.
+    report["subtitle"] = report["subtitle"].replace("[MOCK] Simulated report", "[MOCK] 模拟报告", 1)
+    db.save_report(report)
     result = pipeline.refine_section(report["id"], "summary", ["Explain the missing pricing evidence"])
     assert result["ok"] and result["section"]["refined"]
+    assert result["report"]["subtitle"].startswith("[MOCK] Simulated report")
     assert any("Reader annotations" in p for p in result["section"]["paragraphs"])
     db.update_report(report["id"], title="Renamed report", starred=True)
     saved = db.get_report(report["id"])

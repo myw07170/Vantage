@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Search } from 'lucide-react'
 import { useExpertStore } from '../store/expertStore'
 import { DomainIcon } from '../components/DomainIcon'
 import { VAvatar } from '../components/VAvatar'
+import { VIndustryModule } from '../components/VIndustryModule'
 import { VEmpty } from '../components/ui'
 import { ACCENT_CARD, ACCENT_WELL, LEVEL_ACCENT } from '../lib/accents'
 import { fadeUp, stagger } from '../lib/motion'
@@ -20,7 +21,7 @@ const LEVEL_TABS: {
   { key: 'all', label: 'Everyone', desc: (n) => `${n} analysts` },
   { key: 'L3', label: 'Decision', desc: (n) => `${n} · direction and sign-off` },
   { key: 'L2', label: 'Strategy', desc: (n) => `${n} · method advisors` },
-  { key: 'L1', label: 'Specialist', desc: (n) => `${n} · industry and function` },
+  { key: 'L1', label: 'Specialist', desc: (n) => `${n} · evidence and feedback` },
 ]
 
 // One accent per tier. Three tints of the same colour made the roster look
@@ -80,7 +81,10 @@ function ExpertCard({ expert, onClick }: { expert: Expert; onClick: () => void }
 
 export default function ExpertsPage() {
   const navigate = useNavigate()
+  const reduceMotion = useReducedMotion()
   const experts = useExpertStore((s) => s.experts)
+  const industryModules = useExpertStore((s) => s.industryModules)
+  const [view, setView] = useState<'analysts' | 'industries'>('analysts')
   const [tab, setTab] = useState<ExpertLevel | 'all'>('all')
   const [kw, setKw] = useState('')
 
@@ -110,28 +114,46 @@ export default function ExpertsPage() {
     })
   }, [experts, tab, kw])
 
+  const filteredModules = useMemo(() => {
+    const q = kw.trim().toLowerCase()
+    return industryModules.filter((module) => [module.name, module.summary, ...module.knowledge_tags,
+      ...module.preferred_sources, ...module.checks, ...module.search_angles].join(' ').toLowerCase().includes(q))
+  }, [industryModules, kw])
+
   return (
-    <div className="mx-auto max-w-content px-8 py-8">
+    <div className="mx-auto max-w-content px-4 py-8 sm:px-8">
       <header className="flex flex-col gap-1">
-        <h1 className="font-serif text-h1 text-ink">Analyst team</h1>
+        <h1 className="font-serif text-h1 text-ink">Research expertise</h1>
         <p className="text-aux text-ink-2">
-          {experts.length > 0 ? `${experts.length} specialists` : 'Specialists'} across
-          three tiers — decision, strategy and execution. The director assembles the
-          right team for each brief.
+          {experts.length} core analysts and {industryModules.length} industry modules.
+          Each brief gets a focused team with the industry methods its research needs.
         </p>
       </header>
 
+      <div className="mt-6 flex flex-wrap gap-2" aria-label="Expertise views">
+        {([
+          ['analysts', `Core Analysts (${experts.length})`],
+          ['industries', `Industry Modules (${industryModules.length})`],
+        ] as const).map(([key, label]) => <button key={key} type="button" aria-pressed={view === key}
+          onClick={() => setView(key)}
+          className={`min-h-10 rounded-btn px-4 text-aux font-medium transition-colors focus-visible:outline focus-visible:outline-primary ${view === key
+            ? 'bg-primary-deep text-white' : 'border border-line bg-card text-ink-2 hover:bg-primary-tint'}`}>
+          {label}
+        </button>)}
+      </div>
+
       <div className="mt-6 flex flex-wrap items-center gap-3">
-        <div className="flex h-10 items-center gap-2 rounded-btn border border-line bg-card px-3 shadow-card transition-all focus-within:border-primary focus-within:shadow-glow">
+        <div className="flex h-10 w-full min-w-0 items-center gap-2 rounded-btn border border-line bg-card px-3 shadow-card transition-all focus-within:border-primary focus-within:shadow-glow sm:w-auto">
           <Search size={16} className="text-ink-3" />
           <input
             value={kw}
             onChange={(e) => setKw(e.target.value)}
-            placeholder="Search by name, skill or expertise"
-            className="w-64 bg-transparent text-aux text-ink outline-none placeholder:text-ink-3"
+            aria-label="Search research expertise"
+            placeholder={view === 'analysts' ? 'Search by name, skill or expertise' : 'Search industries or research methods'}
+            className="min-w-0 w-full bg-transparent text-aux text-ink outline-none placeholder:text-ink-3 sm:w-64"
           />
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        {view === 'analysts' && <div className="flex flex-wrap gap-1.5">
           {LEVEL_TABS.map((t) => (
             <button
               key={t.key}
@@ -150,13 +172,13 @@ export default function ExpertsPage() {
               </span>
             </button>
           ))}
-        </div>
+        </div>}
       </div>
 
-      <motion.div
+      {view === 'analysts' ? <motion.div
         key={tab + kw}
         variants={stagger}
-        initial="initial"
+        initial={reduceMotion ? false : 'initial'}
         animate="animate"
         className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
       >
@@ -167,13 +189,15 @@ export default function ExpertsPage() {
             onClick={() => navigate(`/experts/${e.id}`)}
           />
         ))}
-      </motion.div>
+      </motion.div> : <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {filteredModules.map((module) => <VIndustryModule key={module.id} module={module} />)}
+      </div>}
 
-      {filtered.length === 0 && (
+      {(view === 'analysts' ? filtered.length === 0 : filteredModules.length === 0) && (
         <VEmpty
           icon={<Search size={28} strokeWidth={1.5} />}
-          title="No analysts match that search"
-          hint="Try a broader term, or clear the filter to see the full roster."
+          title={view === 'analysts' ? 'No analysts match that search' : 'No industry modules match that search'}
+          hint="Try a broader term, or clear the search."
         />
       )}
     </div>

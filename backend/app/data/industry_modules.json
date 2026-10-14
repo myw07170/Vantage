@@ -1,0 +1,898 @@
+[
+  {
+    "id": "financial-services",
+    "name": "Financial services",
+    "legacy_expert_id": "L1-001",
+    "summary": "Research financial services using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Financial services",
+      "Fintech",
+      "Banking",
+      "Payments",
+      "SEC EDGAR",
+      "Interchange",
+      "BaaS",
+      "CFPB"
+    ],
+    "skills": [
+      "Filing analysis",
+      "Payments economics",
+      "Fintech landscape"
+    ],
+    "preferred_sources": [
+      "Public SEC filings",
+      "Federal Reserve and CFPB publications"
+    ],
+    "checks": [
+      "Distinguish transaction volume from revenue; check payment geography and regulatory scope."
+    ],
+    "search_angles": [
+      "payment processing fee schedules",
+      "financial services regulatory disclosures"
+    ]
+  },
+  {
+    "id": "saas-software",
+    "name": "SaaS & software",
+    "legacy_expert_id": "L1-002",
+    "summary": "Research saas & software using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "SaaS",
+      "B2B software",
+      "Enterprise software",
+      "ARR",
+      "NRR",
+      "G2",
+      "Magic Quadrant",
+      "Product-led growth"
+    ],
+    "skills": [
+      "SaaS metrics",
+      "Product comparison",
+      "Category mapping"
+    ],
+    "preferred_sources": [
+      "Official documentation and pricing pages",
+      "Public filings and situated G2 reviews"
+    ],
+    "checks": [
+      "Separate ARR from recognized revenue; check seat limits, retention definitions and plan availability."
+    ],
+    "search_angles": [
+      "software plan limits and integrations",
+      "software customer switching reviews"
+    ]
+  },
+  {
+    "id": "robotics-manufacturing",
+    "name": "Robotics & manufacturing",
+    "legacy_expert_id": "L1-003",
+    "summary": "Research robotics & manufacturing using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Robotics",
+      "Manufacturing",
+      "Automation",
+      "Industrial IoT",
+      "A3",
+      "Automation ROI",
+      "ISM PMI",
+      "Warehouse"
+    ],
+    "skills": [
+      "Automation economics",
+      "Deployment analysis",
+      "Supply chain"
+    ],
+    "preferred_sources": [
+      "Published deployment case studies",
+      "A3 and public manufacturing statistics"
+    ],
+    "checks": [
+      "Separate demos from production deployments; check utilization, labor assumptions and deployment costs."
+    ],
+    "search_angles": [
+      "robotics production deployment case studies",
+      "automation operating cost benchmarks"
+    ]
+  },
+  {
+    "id": "semiconductors",
+    "name": "Semiconductors",
+    "legacy_expert_id": "L1-004",
+    "summary": "Research semiconductors using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Semiconductors",
+      "Chips",
+      "GPU",
+      "Foundry capacity",
+      "Process nodes",
+      "SIA",
+      "Export controls",
+      "Advanced packaging"
+    ],
+    "skills": [
+      "Fab capacity",
+      "Supply chain",
+      "Process nodes"
+    ],
+    "preferred_sources": [
+      "Public chip specifications and filings",
+      "SIA publications and official export rules"
+    ],
+    "checks": [
+      "Check process node comparability, capacity versus output and benchmark configuration."
+    ],
+    "search_angles": [
+      "chip performance benchmark methodology",
+      "semiconductor capacity public disclosures"
+    ]
+  },
+  {
+    "id": "healthcare-life-sciences",
+    "name": "Healthcare & life sciences",
+    "legacy_expert_id": "L1-005",
+    "summary": "Research healthcare & life sciences using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Healthcare",
+      "Life sciences",
+      "Digital health",
+      "Medical devices",
+      "FDA 510(k)",
+      "ClinicalTrials.gov",
+      "CMS",
+      "Reimbursement"
+    ],
+    "skills": [
+      "Clinical evidence",
+      "Reimbursement",
+      "Regulatory pathways"
+    ],
+    "preferred_sources": [
+      "Public FDA records and ClinicalTrials.gov",
+      "CMS publications and peer-reviewed clinical studies"
+    ],
+    "checks": [
+      "Check clinical endpoints, study population, clearance scope and reimbursement conditions."
+    ],
+    "search_angles": [
+      "clinical evidence and FDA clearance",
+      "healthcare reimbursement coverage"
+    ]
+  },
+  {
+    "id": "energy-electric-vehicles",
+    "name": "Energy & electric vehicles",
+    "legacy_expert_id": "L1-006",
+    "summary": "Research energy & electric vehicles using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Electric vehicles",
+      "Batteries",
+      "Charging",
+      "Energy",
+      "Automotive",
+      "EPA",
+      "DOE AFDC",
+      "IRA credits"
+    ],
+    "skills": [
+      "Battery economics",
+      "Charging infrastructure",
+      "Policy incentives"
+    ],
+    "preferred_sources": [
+      "EPA and DOE AFDC publications",
+      "Official vehicle specifications and incentive eligibility"
+    ],
+    "checks": [
+      "Check battery conditions, charging assumptions, geography and incentive effective dates."
+    ],
+    "search_angles": [
+      "electric vehicle charging and battery specifications",
+      "energy incentive eligibility requirements"
+    ]
+  },
+  {
+    "id": "cloud-infrastructure",
+    "name": "Cloud & infrastructure",
+    "legacy_expert_id": "L1-007",
+    "summary": "Research cloud & infrastructure using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Cloud",
+      "Infrastructure",
+      "AWS",
+      "Azure",
+      "GCP",
+      "Hyperscaler share",
+      "Egress costs",
+      "FinOps"
+    ],
+    "skills": [
+      "Cloud economics",
+      "Platform comparison",
+      "Migration analysis"
+    ],
+    "preferred_sources": [
+      "Official cloud pricing and service documentation",
+      "Published incident reports and reproducible benchmarks"
+    ],
+    "checks": [
+      "Compare region, egress, committed spend, workload and service-level definitions."
+    ],
+    "search_angles": [
+      "cloud regional egress and committed pricing",
+      "cloud service reliability and workload benchmarks"
+    ]
+  },
+  {
+    "id": "ai-foundation-models",
+    "name": "AI & foundation models",
+    "legacy_expert_id": "L1-008",
+    "summary": "Research ai & foundation models using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "AI",
+      "LLM",
+      "Foundation models",
+      "Machine learning",
+      "Inference",
+      "Model cards",
+      "LMArena",
+      "Token pricing"
+    ],
+    "skills": [
+      "Model benchmarking",
+      "Inference economics",
+      "Capability assessment"
+    ],
+    "preferred_sources": [
+      "Official model documentation and model cards",
+      "Public benchmark methodology and API pricing"
+    ],
+    "checks": [
+      "Check model version, benchmark setup, tool access, context limits and inference cost."
+    ],
+    "search_angles": [
+      "model benchmark methodology and limitations",
+      "model API pricing and context limits"
+    ]
+  },
+  {
+    "id": "e-commerce-retail",
+    "name": "E-commerce & retail",
+    "legacy_expert_id": "L1-009",
+    "summary": "Research e-commerce & retail using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "E-commerce",
+      "Retail",
+      "DTC",
+      "Marketplace",
+      "Contribution margin",
+      "CAC/LTV",
+      "Marketplace Pulse",
+      "Census retail data"
+    ],
+    "skills": [
+      "Marketplace dynamics",
+      "Retail metrics",
+      "DTC economics"
+    ],
+    "preferred_sources": [
+      "Public retailer filings and marketplace terms",
+      "Census retail publications and official fee schedules"
+    ],
+    "checks": [
+      "Distinguish GMV from revenue; include fulfillment, returns and marketplace fees."
+    ],
+    "search_angles": [
+      "retail marketplace fee and fulfillment terms",
+      "retail sales and return rate disclosures"
+    ]
+  },
+  {
+    "id": "gaming-interactive-entertainment",
+    "name": "Gaming & interactive entertainment",
+    "legacy_expert_id": "L1-010",
+    "summary": "Research gaming & interactive entertainment using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Gaming",
+      "Video games",
+      "Mobile games",
+      "Live service",
+      "Retention",
+      "ARPDAU",
+      "SteamDB",
+      "Circana"
+    ],
+    "skills": [
+      "Live-service metrics",
+      "Platform economics",
+      "Player retention"
+    ],
+    "preferred_sources": [
+      "Official storefront terms and publisher filings",
+      "Public game telemetry and dated platform announcements"
+    ],
+    "checks": [
+      "Separate registered users from active users; check platform fees and monetization definitions."
+    ],
+    "search_angles": [
+      "gaming storefront revenue share terms",
+      "gaming active user and engagement disclosures"
+    ]
+  },
+  {
+    "id": "blockchain-web3",
+    "name": "Blockchain & Web3",
+    "legacy_expert_id": "L1-011",
+    "summary": "Research blockchain & web3 using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Blockchain",
+      "Crypto",
+      "Web3",
+      "DeFi",
+      "On-chain",
+      "Protocol revenue",
+      "Dune",
+      "DefiLlama"
+    ],
+    "skills": [
+      "On-chain analysis",
+      "Protocol economics",
+      "Regulatory exposure"
+    ],
+    "preferred_sources": [
+      "Public protocol documentation and on-chain records",
+      "Official regulator publications"
+    ],
+    "checks": [
+      "Distinguish wallets from people, circulating from fully diluted supply and incentives from organic usage."
+    ],
+    "search_angles": [
+      "protocol usage and token supply methodology",
+      "blockchain fees and regulatory disclosures"
+    ]
+  },
+  {
+    "id": "media-creator-economy",
+    "name": "Media & creator economy",
+    "legacy_expert_id": "L1-012",
+    "summary": "Research media & creator economy using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Media",
+      "Streaming",
+      "Creator economy",
+      "Advertising",
+      "Audience measurement",
+      "Nielsen",
+      "Comscore",
+      "Watch-time metrics"
+    ],
+    "skills": [
+      "Audience measurement",
+      "Creator monetization",
+      "Platform economics"
+    ],
+    "preferred_sources": [
+      "Official monetization and distribution terms",
+      "Public creator cases and platform disclosures"
+    ],
+    "checks": [
+      "Check payout eligibility, algorithm-dependent distribution and selected creator bias."
+    ],
+    "search_angles": [
+      "creator platform monetization eligibility",
+      "media platform distribution and payout terms"
+    ]
+  },
+  {
+    "id": "mobility-logistics",
+    "name": "Mobility & logistics",
+    "legacy_expert_id": "L1-013",
+    "summary": "Research mobility & logistics using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Logistics",
+      "Freight",
+      "Supply chain",
+      "Last mile",
+      "Delivery",
+      "Fleet utilization",
+      "Cost per mile",
+      "FMCSA"
+    ],
+    "skills": [
+      "Freight economics",
+      "Last-mile analysis",
+      "Fleet utilization"
+    ],
+    "preferred_sources": [
+      "Public carrier filings and service terms",
+      "BTS and transportation authority publications"
+    ],
+    "checks": [
+      "Check route coverage, load factors, delivery scope and unit cost denominators."
+    ],
+    "search_angles": [
+      "logistics delivery coverage and service terms",
+      "transportation operating metrics disclosures"
+    ]
+  },
+  {
+    "id": "restaurants-food-service",
+    "name": "Restaurants & food service",
+    "legacy_expert_id": "L1-014",
+    "summary": "Research restaurants & food service using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Restaurants",
+      "Food service",
+      "Franchise",
+      "QSR",
+      "Same-store sales",
+      "FDD",
+      "AUV",
+      "Four-wall margin"
+    ],
+    "skills": [
+      "Unit economics",
+      "Same-store sales",
+      "Franchise models"
+    ],
+    "preferred_sources": [
+      "Public restaurant filings and menus",
+      "Health department records and public industry statistics"
+    ],
+    "checks": [
+      "Separate same-store growth from store expansion; include delivery fees and franchise economics."
+    ],
+    "search_angles": [
+      "restaurant same store sales disclosures",
+      "food delivery and franchise fee terms"
+    ]
+  },
+  {
+    "id": "beauty-personal-care",
+    "name": "Beauty & personal care",
+    "legacy_expert_id": "L1-015",
+    "summary": "Research beauty & personal care using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Beauty",
+      "Cosmetics",
+      "Personal care",
+      "Skincare",
+      "Retail assortment",
+      "Circana",
+      "MoCRA",
+      "INCI"
+    ],
+    "skills": [
+      "Ingredient analysis",
+      "Retail distribution",
+      "Brand positioning"
+    ],
+    "preferred_sources": [
+      "Official ingredient labels and public FDA notices",
+      "Published ingredient studies and retailer listings"
+    ],
+    "checks": [
+      "Separate cosmetic claims from clinical evidence; check ingredients, study conditions and distribution."
+    ],
+    "search_angles": [
+      "beauty ingredient evidence and product labels",
+      "personal care claims and retail distribution"
+    ]
+  },
+  {
+    "id": "real-estate-proptech",
+    "name": "Real estate & PropTech",
+    "legacy_expert_id": "L1-016",
+    "summary": "Research real estate & proptech using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Real estate",
+      "PropTech",
+      "Housing",
+      "Brokerage",
+      "Mortgage",
+      "NAR",
+      "Case-Shiller",
+      "iBuyer economics"
+    ],
+    "skills": [
+      "Market analysis",
+      "PropTech landscape",
+      "Transaction data"
+    ],
+    "preferred_sources": [
+      "Public transaction records and housing statistics",
+      "NAR and public Case-Shiller releases"
+    ],
+    "checks": [
+      "Separate asking prices from transactions; check geography, seasonality and financing assumptions."
+    ],
+    "search_angles": [
+      "housing transaction methodology and regional data",
+      "proptech brokerage and financing fee terms"
+    ]
+  },
+  {
+    "id": "education-edtech",
+    "name": "Education & EdTech",
+    "legacy_expert_id": "L1-017",
+    "summary": "Research education & edtech using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Education",
+      "EdTech",
+      "K-12",
+      "Higher education",
+      "Corporate learning",
+      "IPEDS",
+      "HolonIQ",
+      "Completion rates"
+    ],
+    "skills": [
+      "Learning outcomes",
+      "Institutional sales",
+      "EdTech landscape"
+    ],
+    "preferred_sources": [
+      "IPEDS and public institutional records",
+      "Published outcome studies and official product documentation"
+    ],
+    "checks": [
+      "Check completion and learning outcomes, study selection, procurement and accessibility."
+    ],
+    "search_angles": [
+      "education completion and learning outcome evidence",
+      "edtech procurement and accessibility requirements"
+    ]
+  },
+  {
+    "id": "apparel-consumer-goods",
+    "name": "Apparel & consumer goods",
+    "legacy_expert_id": "L1-018",
+    "summary": "Research apparel & consumer goods using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Apparel",
+      "Fashion",
+      "Consumer goods",
+      "Footwear",
+      "Inventory turns",
+      "Sell-through",
+      "Markdowns",
+      "Circana"
+    ],
+    "skills": [
+      "Inventory analysis",
+      "Consumer trends",
+      "Supply chain"
+    ],
+    "preferred_sources": [
+      "Public retailer filings and product listings",
+      "Public inventory and trade statistics"
+    ],
+    "checks": [
+      "Check inventory turns, markdowns, returns and differences in sales channels."
+    ],
+    "search_angles": [
+      "consumer goods inventory and markdown disclosures",
+      "apparel sell through and return policies"
+    ]
+  },
+  {
+    "id": "agriculture-food-supply",
+    "name": "Agriculture & food supply",
+    "legacy_expert_id": "L1-019",
+    "summary": "Research agriculture & food supply using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Agriculture",
+      "AgTech",
+      "Farming",
+      "Food supply",
+      "Commodities",
+      "USDA NASS",
+      "WASDE",
+      "Precision ag"
+    ],
+    "skills": [
+      "Commodity analysis",
+      "AgTech adoption",
+      "Supply chain"
+    ],
+    "preferred_sources": [
+      "USDA NASS and WASDE publications",
+      "Public deployment studies and official equipment specifications"
+    ],
+    "checks": [
+      "Check crop, season, geography, input prices and measured adoption outcomes."
+    ],
+    "search_angles": [
+      "agriculture commodity and crop outlook data",
+      "agtech deployment and operating economics"
+    ]
+  },
+  {
+    "id": "travel-hospitality",
+    "name": "Travel & hospitality",
+    "legacy_expert_id": "L1-020",
+    "summary": "Research travel & hospitality using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Travel",
+      "Hospitality",
+      "Hotels",
+      "Airlines",
+      "Booking",
+      "RevPAR",
+      "OTA channel mix",
+      "STR"
+    ],
+    "skills": [
+      "Hospitality metrics",
+      "OTA dynamics",
+      "Demand forecasting"
+    ],
+    "preferred_sources": [
+      "Public hotel and airline filings",
+      "Official booking terms and public occupancy statistics"
+    ],
+    "checks": [
+      "Compare RevPAR, occupancy and room rates on consistent periods; include channel fees."
+    ],
+    "search_angles": [
+      "hospitality occupancy and RevPAR disclosures",
+      "travel booking cancellation and channel fee terms"
+    ]
+  },
+  {
+    "id": "insurance-wealth-management",
+    "name": "Insurance & wealth management",
+    "legacy_expert_id": "L1-021",
+    "summary": "Research insurance & wealth management using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Insurance",
+      "InsurTech",
+      "Underwriting",
+      "Claims",
+      "Wealth management",
+      "Combined ratio",
+      "NAIC",
+      "AM Best"
+    ],
+    "skills": [
+      "Underwriting analysis",
+      "Loss ratios",
+      "Wealth platforms"
+    ],
+    "preferred_sources": [
+      "Public insurer filings and NAIC publications",
+      "Official policy documents and regulatory disclosures"
+    ],
+    "checks": [
+      "Check loss ratios, reserve assumptions, exclusions and investment fee definitions."
+    ],
+    "search_angles": [
+      "insurance loss ratio and reserve disclosures",
+      "wealth management fee and policy exclusions"
+    ]
+  },
+  {
+    "id": "sustainability-advanced-materials",
+    "name": "Sustainability & advanced materials",
+    "legacy_expert_id": "L1-022",
+    "summary": "Research sustainability & advanced materials using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Sustainability",
+      "CleanTech",
+      "Emissions",
+      "ESG",
+      "Carbon",
+      "Advanced materials",
+      "Scope 3",
+      "SBTi"
+    ],
+    "skills": [
+      "Emissions accounting",
+      "Materials analysis",
+      "Policy incentives"
+    ],
+    "preferred_sources": [
+      "Public emissions inventories and verification statements",
+      "Published materials studies and SBTi records"
+    ],
+    "checks": [
+      "Check emissions boundaries, baseline years, lifecycle assumptions and independent verification."
+    ],
+    "search_angles": [
+      "sustainability emissions boundary verification",
+      "advanced materials lifecycle performance evidence"
+    ]
+  },
+  {
+    "id": "aerospace-defense",
+    "name": "Aerospace & defense",
+    "legacy_expert_id": "L1-023",
+    "summary": "Research aerospace & defense using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Aerospace",
+      "Defense",
+      "Space",
+      "Government contracts",
+      "USAspending",
+      "SAM.gov",
+      "DoD budget",
+      "FAA certification"
+    ],
+    "skills": [
+      "Contract analysis",
+      "Program tracking",
+      "Supply chain"
+    ],
+    "preferred_sources": [
+      "USAspending and SAM.gov public records",
+      "DoD budget publications and FAA certification records"
+    ],
+    "checks": [
+      "Separate contract ceilings from obligations; check award dates and certification scope."
+    ],
+    "search_angles": [
+      "aerospace defense contract obligations",
+      "aerospace certification and program milestones"
+    ]
+  },
+  {
+    "id": "consumer-electronics-hardware",
+    "name": "Consumer electronics & hardware",
+    "legacy_expert_id": "L1-024",
+    "summary": "Research consumer electronics & hardware using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Consumer electronics",
+      "Hardware",
+      "Devices",
+      "Wearables",
+      "Smartphones",
+      "FCC filings",
+      "Teardowns",
+      "BOM cost"
+    ],
+    "skills": [
+      "Teardown analysis",
+      "BOM costing",
+      "Certification tracking"
+    ],
+    "preferred_sources": [
+      "Official device specifications and public FCC records",
+      "Published teardowns and reproducible hardware tests"
+    ],
+    "checks": [
+      "Check device generation, test conditions, availability and measured versus estimated component costs."
+    ],
+    "search_angles": [
+      "hardware teardown and measured performance",
+      "consumer device certification and warranty terms"
+    ]
+  },
+  {
+    "id": "cybersecurity-identity",
+    "name": "Cybersecurity & identity",
+    "legacy_expert_id": "L1-037",
+    "summary": "Research cybersecurity & identity using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Cybersecurity",
+      "Identity",
+      "SSO",
+      "Zero trust",
+      "SIEM",
+      "CVE / NVD",
+      "MITRE ATT&CK",
+      "SOC 2"
+    ],
+    "skills": [
+      "Threat landscape",
+      "Compliance attestation",
+      "Identity architecture"
+    ],
+    "preferred_sources": [
+      "Official security and identity documentation",
+      "Public NVD records, MITRE publications and audit attestations"
+    ],
+    "checks": [
+      "Check affected versions, exploit conditions, identity integration support and audit scope."
+    ],
+    "search_angles": [
+      "identity security integration and audit scope",
+      "security vulnerability affected version disclosures"
+    ]
+  },
+  {
+    "id": "telecom-connectivity",
+    "name": "Telecom & connectivity",
+    "legacy_expert_id": "L1-038",
+    "summary": "Research telecom & connectivity using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Telecom",
+      "Connectivity",
+      "5G",
+      "Broadband",
+      "Spectrum",
+      "FCC filings",
+      "ARPU",
+      "Churn"
+    ],
+    "skills": [
+      "Network economics",
+      "Spectrum analysis",
+      "Carrier metrics"
+    ],
+    "preferred_sources": [
+      "Public FCC filings and carrier service terms",
+      "Published throughput tests and carrier financial disclosures"
+    ],
+    "checks": [
+      "Distinguish advertised coverage from measured throughput; compare ARPU and churn definitions."
+    ],
+    "search_angles": [
+      "telecom measured throughput and coverage methodology",
+      "carrier churn and service pricing terms"
+    ]
+  },
+  {
+    "id": "hr-tech-future-of-work",
+    "name": "HR tech & future of work",
+    "legacy_expert_id": "L1-039",
+    "summary": "Research hr tech & future of work using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "HR tech",
+      "Recruiting",
+      "HCM",
+      "Payroll",
+      "ATS",
+      "Workforce data",
+      "BLS",
+      "Employee engagement"
+    ],
+    "skills": [
+      "HCM landscape",
+      "Workforce data",
+      "Procurement patterns"
+    ],
+    "preferred_sources": [
+      "Official HCM and payroll documentation",
+      "BLS publications and situated customer accounts"
+    ],
+    "checks": [
+      "Check procurement requirements, payroll jurisdiction, workforce definitions and user versus buyer needs."
+    ],
+    "search_angles": [
+      "HR payroll integration and jurisdiction requirements",
+      "workforce procurement and employee workflow reviews"
+    ]
+  },
+  {
+    "id": "legal-government-technology",
+    "name": "Legal & government technology",
+    "legacy_expert_id": "L1-040",
+    "summary": "Research legal & government technology using public evidence and comparable definitions.",
+    "knowledge_tags": [
+      "Legal tech",
+      "GovTech",
+      "Public sector",
+      "Procurement",
+      "E-discovery",
+      "PACER",
+      "SAM.gov",
+      "Contract vehicles"
+    ],
+    "skills": [
+      "Procurement analysis",
+      "Legal tech landscape",
+      "Public sector sales"
+    ],
+    "preferred_sources": [
+      "Public SAM.gov procurement records",
+      "Public court records and official product documentation"
+    ],
+    "checks": [
+      "Check contract vehicle, jurisdiction, procurement stage and evidence of actual deployment."
+    ],
+    "search_angles": [
+      "government technology procurement and deployment records",
+      "legal technology workflow and jurisdiction requirements"
+    ]
+  }
+]

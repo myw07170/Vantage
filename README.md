@@ -26,8 +26,14 @@ auditable.
 - **No claim without evidence.** Unsupported conclusions are marked
   `unverified`; citations that do not resolve to collected evidence are removed
   before delivery.
-- **Multi-agent staffing.** A 52-specialist roster is selected per brief across
-  decision, strategy, and execution layers.
+- **Focused analyst teams.** Twelve core analysts combine with 28 reusable
+  industry modules. Quick, Deep and Expert runs staff 6–7, 7–8 and 8–9 analysts
+  respectively; 40 archived identities remain available for historical reports.
+- **Explicit research methods.** Analyst prompts carry responsibilities, evidence
+  preferences, checks, deliverables and judgment boundaries. Industry methods
+  guide searches, analysis and writing without adding independent model calls.
+  Generated content uses American English and defaults to the U.S. market;
+  an explicitly selected market takes precedence.
 - **Deep research pipeline.** The run moves through
   `intake -> orchestrator -> collect -> analyze -> audit -> write -> verify -> done`,
   with rework loops when quality gates fail.
@@ -47,8 +53,8 @@ Current local verification:
 
 | Check | Status |
 |---|---|
-| `uv run pytest` | 101 passed: staffing, provider contracts, API, task lifecycle, collection security and offline pipelines |
-| `npm run test` in `frontend/` | 11 passed: failed requests, SSE retries/deduplication/termination and report caches |
+| `uv run pytest` | 169 passed: catalog compatibility, staffing, industry methods, provider contracts, API, task lifecycle, collection security and offline pipelines |
+| `npm run test` in `frontend/` | 28 passed: catalog views, offline identities, failed requests, SSE behavior and report caches |
 | `npm run build` in `frontend/` | Passes |
 | `npm run lint` in `frontend/` | Passes |
 | LLM smoke tests | Mock runs without a key or model network; Qwen/OpenAI need their own keys |
@@ -242,7 +248,7 @@ Gemini has been removed and old `GEMINI_*` settings no longer have any effect.
 Mock follows all research stages and uses supplied source excerpts, keyword
 sentiment and rule-based reviews. It does not infer product pricing, market shares
 or customer personas. Reports carry `llm_provider`, `is_mock`, and a visible
-`[MOCK] 模拟报告` subtitle that survives reloads and title edits. Mock traces
+`[MOCK] Simulated report` subtitle that survives reloads and title edits. Mock traces
 identify the simulated model and report zero model tokens. An empty evidence
 collection still fails explicitly. Mock is an LLM substitute, not a fully offline
 collection mode; offline tests supply collection fixtures instead.
@@ -309,7 +315,7 @@ the generated report preserves the core evidence invariants.
 | Document | Contents |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System modules, data flow, pipeline stages, storage, SSE behavior |
-| [docs/AGENTS.md](docs/AGENTS.md) | The 52-analyst roster model, staffing protocol, grounding rules |
+| [docs/AGENTS.md](docs/AGENTS.md) | Core analysts, industry modules, archived identities, staffing and grounding rules |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Local setup, production notes, and troubleshooting |
 | [docs/REVIEW.md](docs/REVIEW.md) | 修复验收、删除清单、已知风险与未验证项目 |
 

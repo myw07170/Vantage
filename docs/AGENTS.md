@@ -2,20 +2,21 @@
 
 ## The idea
 
-Vantage models competitive research as a consulting team at work. 52 analysts are
-defined in [`backend/app/data/experts.json`](../backend/app/data/experts.json),
-organized in three tiers. Each engagement gets a team picked for the brief:
-the decision tier scopes and signs off, the strategy and specialist tiers do the
-analysis and collection.
+Vantage models competitive research as a focused consulting team. Twelve active
+analysts are defined in [`backend/app/data/experts.json`](../backend/app/data/experts.json),
+alongside 40 archived identities retained for historical reports. Twenty-eight
+industry modules in `backend/app/data/industry_modules.json` supply reusable
+research methods without acting as additional analysts.
 
-These are role definitions with real domain grounding — an analyst's
-`knowledge_base` names the actual sources they work from (SEC EDGAR, STR, FDA
-510(k), Circana, USAspending) — and that framing shapes what the model looks for
-and how it reasons. [`personas.py`](../backend/app/core/personas.py) builds a
-system-prompt preamble from the staffed analyst's profile and prepends it to
-every stage that reasons or writes, so the roster is a behavior layer rather
-than a set of labels. It is not 52 separate code paths: one module turns a
-profile into a prompt, a staffing decision and a stage assignment.
+Each active role has structured `work_instructions`: responsibilities,
+preferred sources, checks, deliverables and limits. Display biographies are
+separate from execution prompts. Both individual and team prompts carry these
+instructions. Industry modules add public source preferences, interpretation
+checks and search directions to analysis, review, writing and rework.
+
+Generated content uses American English. The U.S. market is the default when no
+market is specified; explicit user selections take precedence. Source preferences
+never imply access to paid databases, private interviews or unavailable tools.
 
 Every persona block ends with the same guard — *your background shapes which
 sources you reach for and what you interrogate; it never licenses a claim the
@@ -27,8 +28,8 @@ attention, never to supply facts from the model's own memory.
 | Tier | Count | Group | Responsibility |
 |---|---|---|---|
 | **L3 · Decision** | 3 | `decision` | Scope the brief, assemble the team, adjudicate quality, sign off |
-| **L2 · Strategy** | 9 | `strategy` | Strategy, pricing, user research, competitive intel, finance, architecture, marketing, data, compliance |
-| **L1 · Specialist** | 40 | `industry` (28) + `function` (12) | Industry depth and research tradecraft |
+| **L2 · Strategy** | 7 | `strategy` | Competitive strategy, pricing, user research, finance, product and technology, go-to-market, compliance |
+| **L1 · Specialist** | 2 | `function` | Public evidence collection and user feedback |
 
 ### The decision tier
 
@@ -38,51 +39,87 @@ attention, never to supply facts from the model's own memory.
 | L3-002 | Marcus Chen | Chief Analyst Officer — owns analytical rigor and authorship |
 | L3-003 | Priya Raghavan | Chief Quality Officer — devil's advocate, drives fact-checking and rework |
 
-### Specialists
+### Core roles and merged methods
 
-**Industry (28):** financial services, SaaS, robotics, semiconductors,
+The seven strategy roles retain IDs L2-001, L2-002, L2-003, L2-005, L2-006,
+L2-007 and L2-009. Competitive strategy absorbs public competitor signals;
+finance absorbs public filing research; user research absorbs published
+qualitative accounts. The quality officer owns factual and statistical checks,
+including survey methodology. Evidence collection (L1-025) and user feedback
+(L1-030) are fixed responsibilities; feedback combines review mining and
+community listening.
+
+### Industry modules
+
+**Coverage (28):** financial services, SaaS, robotics, semiconductors,
 healthcare, energy and EV, cloud, AI and foundation models, retail, gaming,
 blockchain, media, logistics, restaurants, beauty, real estate, education,
 apparel, agriculture, travel, insurance, sustainability, aerospace, consumer
 hardware, cybersecurity and identity, telecom, HR tech, legal and govtech.
 
-**Function (12):** web collection, fact-checking, international research, survey
-methodology, user interviews, social listening, review mining, patents, hiring
-intelligence, public filings, data visualization, archiving.
+Modules are selected after Understand identifies the category. English lexical
+scoring ranks positive matches, breaking ties by module ID; at most two are
+loaded. Generic requests for pricing or reviews do not identify an industry.
+Up to two module search directions fit inside the mode's existing angle budget,
+with a recency direction retained when present. Product selections remain
+authoritative. Module snapshots are persisted in reports and reused for later
+refinement, independently of subsequent catalog edits.
 
 ## Staffing
 
-The decision tier is permanent staff, not a model pick: the director scopes and
-signs off, the chief analyst owns authorship, the quality officer red-teams.
-Only the working team is chosen per brief, in three steps —
+Five roles are permanent: director, chief analyst, quality officer, evidence
+collection and user feedback. Only strategy analysts are selected per brief:
 
-1. **Score.** Every profile is scored against the brief on lexical overlap with
+1. **Score.** Active profiles are scored against the brief on lexical overlap with
    its `knowledge_tags`, `skills` and `role_title`. Deterministic and free.
-2. **Shortlist.** All nine L2s plus the best-matching industry and function
-   specialists — roughly half the roster — are offered to a model, which picks
-   the advisors and specialists and gives each pick a reason.
+2. **Shortlist.** The seven active strategy roles are offered to the existing
+   dispatch call with their work instructions and loaded industry methods.
+   Each selected role gets a reason specifying its task and relevance.
 3. **Normalize.** `normalize_team` repairs the result: unknown and duplicate ids
-   dropped, size bounds enforced, and a strategy advisor and a collection
-   specialist guaranteed. A malformed dispatch cannot silently degrade a run,
-   and a failed call falls through to the best-scoring team.
+   and archived IDs dropped, mode bounds enforced, and all five fixed roles
+   guaranteed. Invalid or failed selections are filled by deterministic
+   relevance ranking to the mode's minimum strategy count.
+
+| Mode | Strategy analysts | Total analysts |
+|---|---|---|
+| Quick | 1–2 | 6–7 |
+| Deep | 2–3 | 7–8 |
+| Expert | 3–4 | 8–9 |
+
+Mock applies these same bounds without inventing analytical conclusions.
+Modules do not contribute to analyst counts or workload statistics. No separate
+per-analyst inference rounds are added.
 
 ## Role to stage
 
-Stages are assigned by capability — matched against an analyst's tags and skills
-— rather than by whoever sorts first.
+Fixed responsibilities have explicit owners; strategy analysis is matched to
+the brief's focus areas.
 
 | Stage | Assignment |
 |---|---|
 | intake / orchestrator / done | The director (L3-001) |
-| collect | The function specialist whose tradecraft is collection; the crawler when staffed |
-| sentiment | The function specialist whose tradecraft is social listening or review mining |
+| collect | Evidence Collection Specialist (L1-025) |
+| sentiment | User Feedback Specialist (L1-030) |
 | analyze | The strategy advisor whose specialism best fits the brief's focus areas |
 | audit / verify | The quality officer (L3-003) |
-| write | Per section: pricing to the pricing strategist, risk to compliance, market reads to the industry analyst, the rest to the chief analyst |
+| write | Pricing to pricing/finance, risk to compliance/finance, market trends to competitive strategy/finance; unassigned sections to the chief analyst |
 
 Section authorship is not cosmetic. Each section carries its assigned analyst's
 persona, so different sections are argued from different expertise, and a
 rewrite ordered by the verify stage goes back to whoever wrote it.
+
+## Catalog compatibility
+
+`GET /api/experts` returns the 12 active profiles; `include_archived=true`
+returns all 52 identities. Expert details resolve archived IDs, and workload
+supports the same filter without merging or deleting historical statistics.
+`GET /api/industry-modules` returns the separate module catalog.
+
+The frontend indexes all identities but lists only core analysts by default.
+Industry Modules is a separate searchable view, and historical analyst pages
+show an archived marker. Both catalogs ship as offline assets. Old reports
+without `industry_modules` remain readable and refinable; no database migration
+or historical report rewrite is required.
 
 ## Message protocol
 

@@ -360,6 +360,9 @@ export default function ReportPage() {
                   {plural(r.evidence.length, 'source')}
                 </span>
               </div>
+              {(r.industry_modules?.length ?? 0) > 0 && <p className="mt-3 text-tag text-white/85">
+                Industry methods: {r.industry_modules!.map((module) => module.name).join(' · ')}
+              </p>}
             </div>
             {/* Opposite corner from Saved / Trace / Edit / Export, so the title
                 bar carries the report's actions at both ends. */}

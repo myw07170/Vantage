@@ -4,6 +4,7 @@ import type {
   Claim,
   DAGNode,
   Evidence,
+  IndustryModule,
   ProgressInfo,
   SSEEventType,
   StreamStatus,
@@ -24,6 +25,7 @@ export interface StreamMessage {
   expert?: string
   text?: string
   members?: string[]
+  industry_modules?: IndustryModule[]
   claim?: Claim
   reason?: string
   diff?: { before: string; after: string }
@@ -81,6 +83,7 @@ interface TaskState {
   traces: TraceSpan[]
   progress: ProgressInfo
   teamMembers: string[]
+  industryModules: IndustryModule[]
   error: string | null
   streamStatus: StreamStatus
   /** Highest server event id ingested — everything at or below is a replay. */
@@ -121,6 +124,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   traces: [],
   progress: { ...initProgress },
   teamMembers: [],
+  industryModules: [],
   error: null,
   streamStatus: 'idle',
   lastEventId: 0,
@@ -143,6 +147,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       traces: [],
       progress: { ...initProgress },
       teamMembers: [],
+      industryModules: [],
       error: null,
       streamStatus: 'connecting',
       lastEventId: 0,
@@ -182,7 +187,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       case 'message': {
         const msg = d as unknown as StreamMessage
         const patch: Partial<TaskState> = { messages: [...s.messages, msg], ...seq }
-        if (msg.kind === 'team' && msg.members) patch.teamMembers = msg.members
+        if (msg.kind === 'team' && msg.members) {
+          patch.teamMembers = msg.members
+          patch.industryModules = msg.industry_modules ?? []
+        }
         if (msg.kind === 'claim' && msg.claim) patch.claims = [...s.claims, msg.claim]
         set(patch)
         return

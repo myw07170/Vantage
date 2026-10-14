@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   Home,
@@ -28,7 +28,7 @@ const navItems = [
   { to: '/', label: 'New research', icon: Home, end: true },
   { to: '/library', label: 'My reports', icon: BarChart3 },
   { to: '/knowledge', label: 'Knowledge base', icon: Library },
-  { to: '/experts', label: 'Analyst team', icon: Users },
+  { to: '/experts', label: 'Research expertise', icon: Users },
   { to: '/dashboard', label: 'Intelligence center', icon: Radar },
 ]
 
@@ -53,6 +53,13 @@ let lastTotals = { reports: 0, evidence: 0 }
 const MENU_W = 168
 const MENU_H = 124
 
+function watchNarrowLayout(notify: () => void) {
+  const media = window.matchMedia?.('(max-width: 767px)')
+  media?.addEventListener('change', notify)
+  return () => media?.removeEventListener('change', notify)
+}
+const isNarrowLayout = () => window.matchMedia?.('(max-width: 767px)').matches ?? false
+
 export default function VSidebar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -63,7 +70,9 @@ export default function VSidebar() {
   const loadCards = useReportStore((s) => s.loadCards)
   const patchCard = useReportStore((s) => s.patchCard)
   const removeCard = useReportStore((s) => s.removeCard)
-  const collapsed = useUIStore((s) => s.sidebarCollapsed)
+  const savedCollapsed = useUIStore((s) => s.sidebarCollapsed)
+  const narrow = useSyncExternalStore(watchNarrowLayout, isNarrowLayout, () => false)
+  const collapsed = savedCollapsed || narrow
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
 
   // Row actions. One menu for the whole list rather than one per row: only ever
@@ -226,7 +235,7 @@ export default function VSidebar() {
             </span>
           )}
         </button>
-        <button
+        {!narrow && <button
           onClick={toggleSidebar}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -236,7 +245,7 @@ export default function VSidebar() {
           }`}
         >
           {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-        </button>
+        </button>}
       </div>
 
       <nav className="flex flex-col gap-1 px-3">
@@ -249,6 +258,7 @@ export default function VSidebar() {
               to={item.to}
               end={item.end}
               title={collapsed ? item.label : undefined}
+              aria-label={collapsed ? item.label : undefined}
               className={({ isActive }) =>
                 [
                   'flex h-11 items-center rounded-btn text-[15px] transition-all ease-vantage',

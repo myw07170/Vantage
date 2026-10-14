@@ -53,7 +53,8 @@ def _rule_sentiment(text: str) -> str:
     return "neu"
 
 
-def _llm_classify(brand: str, comments: List[Dict[str, Any]], model: str = None) -> bool:
+def _llm_classify(brand: str, comments: List[Dict[str, Any]], model: str = None,
+                  persona: str = "") -> bool:
     """Label each comment pos/neu/neg, writing back to `comment["sentiment"]`.
 
     Returns False if the call fails, so the caller can fall back to rules.
@@ -69,7 +70,8 @@ def _llm_classify(brand: str, comments: List[Dict[str, Any]], model: str = None)
                 {
                     "role": "system",
                     "content": (
-                        "You are a social-listening analyst. For each user comment, "
+                        persona
+                        + "You are a social-listening analyst. For each user comment, "
                         "judge its sentiment toward the target brand specifically — "
                         "not the general tone of the post. A comment praising a "
                         "competitor while criticizing the target is negative."
@@ -124,13 +126,13 @@ def _llm_classify(brand: str, comments: List[Dict[str, Any]], model: str = None)
 
 
 def analyze_sentiment(
-    brand: str, comments: List[Dict[str, Any]], model: str = None
+    brand: str, comments: List[Dict[str, Any]], model: str = None, persona: str = ""
 ) -> Dict[str, Any]:
     """comments: `[{text, platform, url, title, brand, signals?}]`, all real."""
     if not comments:
         return _empty_result()
 
-    if not _llm_classify(brand, comments, model=model):
+    if not _llm_classify(brand, comments, model=model, persona=persona):
         for c in comments:
             c["sentiment"] = _rule_sentiment(c.get("text", ""))
 
@@ -147,7 +149,7 @@ def analyze_sentiment(
     overall_pct = _normalize_pct(overall, total)
     camps = _build_camps(brand, comments, total)
     voices = _build_voices(comments)
-    highlights = _extract_highlights(brand, comments, model=model)
+    highlights = _extract_highlights(brand, comments, model=model, persona=persona)
 
     # Present platforms in registry priority order.
     ordered_platform = {p: by_platform[p] for p in PLATFORM_ORDER if p in by_platform}
@@ -235,7 +237,7 @@ def _build_voices(comments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _extract_highlights(
-    brand: str, comments: List[Dict[str, Any]], model: str = None
+    brand: str, comments: List[Dict[str, Any]], model: str = None, persona: str = ""
 ) -> List[Dict[str, Any]]:
     """Pull the most telling phrases, each still linked to its source comment."""
     pool = [c for c in comments if c.get("url") and (c.get("text") or "").strip()]
@@ -255,7 +257,8 @@ def _extract_highlights(
                 {
                     "role": "system",
                     "content": (
-                        "You are a social-listening analyst. From these real user "
+                        persona
+                        + "You are a social-listening analyst. From these real user "
                         "comments, pull the 4-6 most revealing short phrases — the "
                         "lines that best capture what people actually think. Cover "
                         "both positive and negative voices.\n\n"

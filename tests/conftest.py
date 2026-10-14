@@ -31,7 +31,7 @@ def offline(monkeypatch, tmp_path):
         pytest.fail("Offline pipeline attempted network access")
     monkeypatch.setattr(httpx.Client, "send", network_forbidden)
 
-    searches, fetches, operations = [], [], []
+    searches, fetches, operations, prompts = [], [], [], []
     def search(queries, **kwargs):
         searches.extend(queries)
         brand = queries[0].split()[0]
@@ -56,6 +56,7 @@ def offline(monkeypatch, tmp_path):
     original_complete = llm_mock.complete
     def complete(messages, kind, context, json_mode):
         operations.append((kind, context))
+        prompts.append((kind, messages))
         return original_complete(messages, kind, context, json_mode)
     monkeypatch.setattr(llm_mock, "complete", complete)
     from app import main
@@ -63,7 +64,7 @@ def offline(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "settings", settings)
     monkeypatch.setattr(main, "runner", TaskRunner())
     monkeypatch.setattr(pipeline, "public_addresses", lambda url: ["93.184.216.34"])
-    yield SimpleNamespace(searches=searches, fetches=fetches, operations=operations)
+    yield SimpleNamespace(searches=searches, fetches=fetches, operations=operations, prompts=prompts)
     for conn in connections:
         conn.close()
     trace.set_context("", "", "", "")

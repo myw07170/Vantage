@@ -27,7 +27,29 @@ export interface Expert {
   domain_icon: string
   gender: 'male' | 'female'
   status: ExpertStatus
-  stats: { missions: number; avg_evidence: number }
+  stats: { missions: number; avg_evidence: number; evidence_collected?: number; claims_authored?: number }
+  catalog_status?: 'active' | 'archived'
+  work_instructions?: WorkInstructions
+}
+
+export interface WorkInstructions {
+  responsibilities?: string[]
+  preferred_sources?: string[]
+  checks?: string[]
+  deliverables?: string[]
+  limits?: string[]
+}
+
+export interface IndustryModule {
+  id: string
+  name: string
+  legacy_expert_id: string
+  summary: string
+  knowledge_tags: string[]
+  skills: string[]
+  preferred_sources: string[]
+  checks: string[]
+  search_angles: string[]
 }
 
 /* ── Task creation and clarification ─────────────────────────────────────── */
@@ -326,6 +348,7 @@ export interface ReportFigure {
 }
 
 export interface Report {
+  industry_modules?: IndustryModule[]
   llm_provider?: 'mock' | 'qwen' | 'openai'
   is_mock?: boolean
   id: string

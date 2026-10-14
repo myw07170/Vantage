@@ -11,7 +11,7 @@ beforeEach(() => {
 })
 
 it('updates mock metadata, details and list together after refinement', () => {
-  const updated = { ...report, subtitle: '[MOCK] 模拟报告', is_mock: true, llm_provider: 'mock' as const }
+  const updated = { ...report, subtitle: '[MOCK] Simulated report', is_mock: true, llm_provider: 'mock' as const }
   useReportStore.getState().replaceReport(updated)
   const state = useReportStore.getState()
   expect(state.current?.is_mock).toBe(true)

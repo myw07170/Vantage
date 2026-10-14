@@ -21,6 +21,7 @@ import { VAgentStream } from '../components/VAgentStream'
 import { VEvidenceFeed } from '../components/VEvidenceFeed'
 import { VTracePanel } from '../components/VTracePanel'
 import { VAvatar } from '../components/VAvatar'
+import { VIndustryModule } from '../components/VIndustryModule'
 import { VLogo } from '../components/VLogo'
 import { VCountUp } from '../components/ui'
 import { plural } from '../lib/format'
@@ -42,6 +43,7 @@ export default function WorkspacePage() {
     messages,
     progress,
     teamMembers,
+    industryModules,
     traces,
     reportId,
     finished,
@@ -112,6 +114,21 @@ export default function WorkspacePage() {
         <div className="bg-risk/10 px-5 py-2 text-aux text-risk-deep">{error}</div>
       )}
 
+      {teamMembers.length > 0 && <details className="shrink-0 border-b border-line bg-card/40 px-5 py-3 lg:hidden">
+        <summary className="cursor-pointer text-aux font-semibold text-ink">
+          Research team ({teamMembers.length}){industryModules.length > 0 ? ' · Industry methods' : ''}
+        </summary>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {teamMembers.map((id) => {
+            const expert = byId(id)
+            return expert && <VAvatar key={id} expert={expert} size={32} title={`${expert.name} · ${expert.role_title}`} />
+          })}
+        </div>
+        <div className="mt-3 space-y-2">
+          {industryModules.map((module) => <VIndustryModule key={module.id} module={module} compact />)}
+        </div>
+      </details>}
+
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_1fr_360px]">
         {/* Pipeline and team take whatever height they need and scroll only if
             the viewport is too short; the decision log below them is fixed. */}
@@ -144,6 +161,12 @@ export default function WorkspacePage() {
                 })}
               </div>
             </div>
+            {industryModules.length > 0 && <div>
+              <div className="mb-2 text-aux font-semibold text-ink">Industry methods</div>
+              <div className="space-y-2">
+                {industryModules.map((module) => <VIndustryModule key={module.id} module={module} compact />)}
+              </div>
+            </div>}
           </div>
 
           <VTracePanel traces={traces} />

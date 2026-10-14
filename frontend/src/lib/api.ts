@@ -3,6 +3,7 @@ import type {
   DashboardStats,
   EvidenceQueryResp,
   Expert,
+  IndustryModule,
   ExpertWorkload,
   Report,
   ReportCard,
@@ -51,7 +52,7 @@ async function safeJson<T>(path: string, init?: RequestInit, fallback?: T): Prom
 /** The roster, from the backend or the bundled copy if it is unreachable. */
 export async function fetchExperts(): Promise<Expert[]> {
   try {
-    const r = await fetch(`${API_BASE}/api/experts`)
+    const r = await fetch(`${API_BASE}/api/experts?include_archived=true`)
     if (r.ok) {
       const data = await r.json()
       if (Array.isArray(data) && data.length) return data
@@ -62,6 +63,19 @@ export async function fetchExperts(): Promise<Expert[]> {
   }
   const local = await fetch('/assets/experts.json')
   return (await local.json()) as Expert[]
+}
+
+/** Industry methods are separate from the analyst catalog and headcount. */
+export async function fetchIndustryModules(): Promise<IndustryModule[]> {
+  try {
+    const r = await fetch(`${API_BASE}/api/industry-modules`)
+    if (r.ok) {
+      const data = await r.json()
+      if (Array.isArray(data)) return data
+    }
+  } catch { /* use the bundled catalog */ }
+  const local = await fetch('/assets/industry_modules.json')
+  return (await local.json()) as IndustryModule[]
 }
 
 export async function createTask(

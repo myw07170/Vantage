@@ -73,8 +73,8 @@ questions, and neither can answer the other's.
 
 | Stage | What happens |
 |---|---|
-| **intake** | The director breaks the brief into competitors, focus areas and search angles. |
-| **orchestrator** | A team is selected from the 52-analyst roster, each with a stated reason. |
+| **intake** | The director plans research for the confirmed products, focus and category. Up to two matching industry modules contribute search directions within the existing budget. |
+| **orchestrator** | Five fixed core responsibilities plus mode-specific strategy analysts are staffed from the 12-role catalog. Each role has stated ownership; industry modules are shown separately. |
 | **collect** | Per competitor: multi-angle search → fetch → relevance filter → `Evidence` with a credibility score. Then user voice across every registered platform. |
 | **analyze** | Cross-validation into claims, plus the structured feature/pricing/persona objects. Sentiment is classified here. |
 | **audit** | Rule-based quality evaluation plus a model review that scores each dimension. Either passes or emits `REWORK` envelopes. |
@@ -89,12 +89,30 @@ questions, and neither can answer the other's.
 | | Quick | Deep | Expert |
 |---|---|---|---|
 | Search angles | 4 | 6 | 9 |
+| Strategy analysts | 1–2 | 2–3 | 3–4 |
+| Total analysts | 6–7 | 7–8 | 8–9 |
 | Pages fetched per brand | 6 | 12 | 16 |
 | Sections | 5 | 9 | 12 |
 | Rework rounds | 0 | 1 | 2 |
 | Min paragraphs/section | 3 | 5 | 7 |
 | Verify rounds | 1 | 1 | 2 |
 | Max section rewrites | 2 | 4 | 6 |
+
+The catalog retains all original IDs for historical references, with 12 active
+roles and 40 archived profiles. `/api/experts` defaults to active roles;
+`include_archived=true` includes historical identities. Workload follows the
+same filter without rewriting stored statistics. `/api/industry-modules` exposes
+28 reusable methods with sources, checks and search angles.
+
+Module matching uses English lexical scoring and deterministic ID tie-breaking;
+generic research dimensions alone do not identify an industry. At most two
+positive matches are loaded, or none when no industry signal is present. Module
+snapshots are carried on the team event and saved in the report's
+`industry_modules` field. Analysis, review, writing, rework and later refinement
+use those methods; older reports without the field use an empty module list.
+No extra model calls or database migrations are introduced. Generated prose uses
+American English, with the U.S. as the default market and explicit user markets
+taking precedence.
 
 ### Rework
 
@@ -174,7 +192,7 @@ collection inputs and use a temporary database.
 Mock bypasses model quotas, records `mock:` trace model names with zero tokens,
 and reports `{}` for quota usage. `/health` and `/api/llm/ping` expose
 `llm_provider` and `is_mock`. Persisted reports include the same metadata and a
-visible `[MOCK] 模拟报告` subtitle. Existing report JSON storage needs no migration.
+visible `[MOCK] Simulated report` subtitle. Existing report JSON storage needs no migration.
 Gemini and its SDK were removed; old `GEMINI_*` settings are ignored.
 
 ## Evidence and claims
