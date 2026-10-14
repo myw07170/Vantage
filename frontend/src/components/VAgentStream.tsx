@@ -29,10 +29,11 @@ export function VAgentStream({ thoughts }: { thoughts: ThoughtItem[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      {thoughts.map((t) => {
+      {thoughts.map((t, index) => {
         const meta = KIND_META[t.kind] ?? KIND_META.action
         const Icon = meta.icon
         const expert = t.expert ? byId(t.expert) : undefined
+        const hideAvatar = expert && thoughts[index - 1]?.expert === t.expert
         return (
           <motion.div
             key={t.id}
@@ -41,7 +42,9 @@ export function VAgentStream({ thoughts }: { thoughts: ThoughtItem[] }) {
             transition={{ duration: 0.3 }}
             className="flex gap-2.5"
           >
-            {expert ? (
+            {hideAvatar ? (
+              <span aria-hidden="true" className="mt-0.5 h-7 w-7 shrink-0" />
+            ) : expert ? (
               <VAvatar expert={expert} size={28} className="mt-0.5 shadow-card" />
             ) : (
               <span

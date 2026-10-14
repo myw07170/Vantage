@@ -36,11 +36,11 @@ export function VEvidenceCard({
         highlighted ? { opacity: 1, x: 0, scale: [1, 1.04, 1] } : { opacity: 1, x: 0 }
       }
       transition={highlighted ? { duration: 0.7 } : undefined}
-      className={`group block rounded-card border bg-card p-3.5 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-float ${
+      className={`group block rounded-card border bg-card p-3 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-float ${
         highlighted ? 'border-primary ring-2 ring-primary/40' : 'border-line/60'
       }`}
     >
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
         <span
           className={`inline-flex items-center rounded-chip px-2 h-5 text-tag font-medium ${cls}`}
         >
@@ -61,19 +61,25 @@ export function VEvidenceCard({
           Credibility {cred}
         </span>
       </div>
-      <div className="mt-2 flex items-start gap-1.5">
+      <div className="mt-1.5 flex items-start gap-1.5">
         <FileText size={14} className="mt-0.5 shrink-0 text-ink-3" />
-        <span className="line-clamp-2 text-aux font-medium text-ink">{ev.title}</span>
+        <span className="min-w-0 flex-1 truncate text-aux font-medium leading-snug text-ink" title={ev.title}>
+          {ev.title}
+        </span>
         <ExternalLink
           size={13}
           className="ml-auto shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100"
         />
       </div>
-      <p className="mt-1.5 line-clamp-3 text-tag leading-relaxed text-ink-2">
+      <p className="mt-1 line-clamp-2 break-words text-tag leading-snug text-ink-2">
         {ev.excerpt}
       </p>
       {ev.domain && (
-        <div className="mt-1.5 truncate text-tag text-ink-3">{ev.domain}</div>
+        <div className="mt-1.5 flex">
+          <span className="max-w-full truncate rounded-chip bg-paper px-1.5 py-0.5 text-tag text-ink-3" title={ev.domain}>
+            {ev.domain}
+          </span>
+        </div>
       )}
     </motion.a>
   )
@@ -90,7 +96,7 @@ export function VEvidenceFeed({ evidences }: { evidences: Evidence[] }) {
     )
   }
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
       {evidences.map((ev, i) => (
         <VEvidenceCard key={ev.evidence_id} ev={ev} index={i} />
       ))}

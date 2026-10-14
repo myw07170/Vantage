@@ -711,10 +711,10 @@ export default function ReportPage() {
         </article>
       </main>
 
-      {/* Sources and notes. `w-[380px]` is the panel's width; `xl:flex` is the
+      {/* Sources and notes. `w-[340px]` is the panel's width; `xl:flex` is the
           breakpoint below which it is dropped entirely rather than squeezing the
           article — raise the width and you may want `2xl:flex` with it. */}
-      <aside className="hidden w-[380px] shrink-0 flex-col border-l border-line bg-card/50 xl:flex">
+      <aside className="hidden w-[340px] shrink-0 flex-col border-l border-line bg-card/50 xl:flex">
         <div className="flex h-14 items-center gap-2 border-b border-line px-5">
           <BookOpen size={16} className="text-primary" />
           <span className="text-aux font-semibold text-ink">Sources &amp; notes</span>
@@ -772,7 +772,7 @@ export default function ReportPage() {
           <div className="mb-3 text-tag font-semibold text-ink-3">
             Sources ({r.evidence.length})
           </div>
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2">
             {r.evidence.map((ev, i) => (
               <VEvidenceCard
                 key={ev.evidence_id}
