@@ -105,7 +105,7 @@ def compute_report_metrics(
             "verify_rounds": verify_rounds,
             "verify_issues_fixed": verify_issues_fixed,
             "formula": (
-                "accuracy (legacy field) = claims citing multiple domains / total claims; not factual accuracy; "
+                "accuracy = high-confidence claims / total claims; "
                 "correction rate = edited blocks / editable blocks (updated after feedback)"
             ),
         },

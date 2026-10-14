@@ -43,10 +43,7 @@ from app.core.fetcher import UnsafeURL, domain_of, fetch_page, public_addresses
 from app.core.llm import TOKEN_USAGE, LLMNotConfigured, chat, chat_json, raise_if_fatal
 from app.core.metrics import compute_report_metrics, merge_quality_into_metrics
 from app.core.models import Envelope, Evidence, SourceType, make_claim
-from app.core.evidence_context import select_evidence, evidence_digest
-from app.core.research_scope import VENDOR_DOMAINS, is_category, is_vendor_source, product_names
 from app.core.personas import (
-    CHIEF_ANALYST,
     DIRECTOR,
     MAX_L1,
     MAX_L2,
@@ -170,55 +167,14 @@ def submit_clarify(task_id: str, answers: Dict[str, Any]) -> Dict[str, Any]:
     if not task:
         return {"ok": False, "message": "Task not found."}
     prev = task.get("clarifications", {}) or {}
-    if task["status"] not in ("created", "clarified"):
-        return {"ok": False, "message": "Only an unstarted task can be clarified.", "status_code": 409}
-    try:
-        if answers.get("scope_confirmed") is not True:
-            raise ValueError("Review the final product list and confirm the research scope.")
-        products = product_names(answers.get("competitors"))
-        scope = prev.get("_scope") or {}
-        subject = str(scope.get("subject") or "").strip()
-        if (scope.get("subject_type") == "product" and subject
-                and not str(answers.get("scope", "")).lower().startswith("no")
-                and subject.casefold() not in {p.casefold() for p in products}):
-            raise ValueError(f'Keep the primary product "{subject}" in the confirmed product list, or correct the scope.')
-    except ValueError as exc:
-        return {"ok": False, "message": str(exc), "status_code": 422}
     merged = {**{k: v for k, v in answers.items() if not k.startswith("_")},
               **{k: v for k, v in prev.items() if k.startswith("_")}}
-    merged["competitors"] = products
-    merged["_confirmed_products"] = products
     if not db.update_task_clarify(task_id, merged):
         return {"ok": False, "message": "Only an unstarted task can be clarified."}
     return {"ok": True}
 
 
 def refine_section(
-    report_id: str, section_id: str, annotations: List[str]
-) -> Dict[str, Any]:
-    operation_id = _sid("refine")
-    try:
-        with trace.operation_context(operation_id, CHIEF_ANALYST, "write", "Reader-requested refinement"):
-            result = _refine_section(report_id, section_id, annotations)
-        spans = trace.get_trace(operation_id)
-        if spans:
-            report = db.get_report(report_id)
-            if report:
-                # The process-local sequence may have restarted since the report.
-                last_seq = max((s.get("seq", 0) for s in report.get("trace", [])), default=0)
-                for index, span in enumerate(spans, last_seq + 1):
-                    span["seq"] = index
-                report["trace"] = list(report.get("trace", [])) + spans
-                db.save_report(report)
-                db.save_traces(operation_id, report_id, spans)
-                if result.get("ok"):
-                    result["report"] = report
-        return result
-    finally:
-        trace.cleanup(operation_id)
-
-
-def _refine_section(
     report_id: str, section_id: str, annotations: List[str]
 ) -> Dict[str, Any]:
     """Re-deepen one section against a reader's annotations.
@@ -237,10 +193,10 @@ def _refine_section(
     query = rep.get("query", "")
     brands = rep.get("brands", [])
     evidence = rep.get("evidence", [])
-    selected = select_evidence(evidence, brands=brands,
-                               dimensions=[section_id, target.get("title", "")] + annotations,
-                               limit=24, priority_ids=target.get("source_evidence_ids", []))
-    digest = evidence_digest(selected, brands=brands, dimensions=[section_id])
+    digest = "\n".join(
+        f"[{e.get('evidence_id')}|{e.get('domain','')}] {e.get('title','')}: {e.get('excerpt','')}"
+        for e in evidence[:24]
+    )
     note_text = "\n".join(f"- {a}" for a in annotations if a)
     existing = "\n".join(target.get("paragraphs", []))
 
@@ -276,9 +232,8 @@ def _refine_section(
             temperature=0.7,
             model=_model("core"),
             purpose=f"Deepen section from annotations: {target.get('title','')}",
-            evidence_ids=[e["evidence_id"] for e in selected],
             task_kind="refine_section",
-            mock_context={"title": target.get("title", ""), "evidence": selected,
+            mock_context={"title": target.get("title", ""), "evidence": evidence[:24],
                           "annotations": annotations},
         )
         if isinstance(data, dict) and data.get("paragraphs"):
@@ -309,11 +264,6 @@ def _refine_section(
                         src.append(eid)
                 target["source_evidence_ids"] = src
                 target["refined"] = True
-                # The previous editorial verdict belongs to the old prose.
-                review = rep.setdefault("verify_review", {})
-                review.update(verdict="flagged", review_complete=False)
-                review.setdefault("recheck_status", {})[sid] = "unavailable"
-                review.setdefault("findings", []).extend(f.to_dict() for f in vr.open)
                 if _settings.is_mock:
                     # Refining a historical real report with mock also makes
                     # the delivered report partially simulated.
@@ -358,20 +308,19 @@ def _clarify_questions(query: str, scope: Optional[Dict[str, Any]] = None) -> Li
                 "hint": "If this is off, describe the real subject in the last question.",
             }
         )
-    questions.append(
-        {
-            "id": "competitors",
-            "question": (
-                f"Select the exact products to compare for \"{subject}\", "
-                "including the primary product:"
-            ),
-            "type": "multi",
-            "options": list(dict.fromkeys(
-                ([subject] if scope.get("subject_type") == "product" else []) + competitors
-            ))[:13],
-            "hint": "Everything you select gets researched in full. Add any we missed at the end.",
-        }
-    )
+    if competitors:
+        questions.append(
+            {
+                "id": "competitors",
+                "question": (
+                    f"We found these competitors for \"{subject}\". "
+                    "Select the ones you want compared:"
+                ),
+                "type": "multi",
+                "options": competitors[:12],
+                "hint": "Everything you select gets researched in full. Add any we missed at the end.",
+            }
+        )
 
     questions.extend(
         [
@@ -456,10 +405,7 @@ def _discover_scope(query: str) -> Dict[str, Any]:
                 "Competitors must be real and searchable. Never invent a name to "
                 "fill the list — a short accurate list beats a long padded one. "
                 "Do not include the subject itself.\n"
-                "Classify the subject as product (a concrete named product/company), "
-                "category (a market or class of tools), or unknown. Never put a category in competitors.\n"
-                'Return JSON: {"subject":"...","subject_type":"product|category|unknown",'
-                '"domain":"...","competitors":["..."]}'
+                'Return JSON: {"subject":"...","domain":"...","competitors":["..."]}'
             ),
         },
         {"role": "user", "content": query},
@@ -473,7 +419,7 @@ def _discover_scope(query: str) -> Dict[str, Any]:
                 model=_model("aux"),
                 purpose="Scope discovery: subject, category, competitors",
                 task_kind="scope",
-                mock_context={"query": query, "brands": _mock_scope_products(query)},
+                mock_context={"query": query, "brands": _regex_brands(query)},
             )
             if isinstance(data, dict) and (data.get("subject") or data.get("competitors")):
                 subject = str(data.get("subject") or "").strip()
@@ -485,17 +431,11 @@ def _discover_scope(query: str) -> Dict[str, Any]:
                 ]
                 seen = set()
                 comps = [c for c in comps if not (c in seen or seen.add(c))]
-                kind = data.get("subject_type", "unknown")
-                if is_category(subject):
-                    kind = "category"
-                if kind not in ("product", "category", "unknown"):
-                    kind = "unknown"
-                return {"subject": subject, "subject_type": kind, "domain": domain,
-                        "competitors": [c for c in comps if not is_category(c)][:12]}
+                return {"subject": subject, "domain": domain, "competitors": comps[:12]}
         except Exception as exc:
             raise_if_fatal(exc)
             pass
-    return {"subject": "", "subject_type": "unknown", "domain": "", "competitors": []}
+    return {"subject": "", "domain": "", "competitors": []}
 
 
 def _plan_research(
@@ -505,8 +445,13 @@ def _plan_research(
     clar_text = "; ".join(
         f"{k}: {v}" for k, v in clar.items() if v and not str(k).startswith("_")
     )
-    requested = product_names(clar.get("_confirmed_products"))
-    user_brands = requested
+    user_brands = clar.get("competitors") or []
+    if isinstance(user_brands, str):
+        user_brands = [user_brands]
+    user_brands = [str(b).strip() for b in user_brands if str(b).strip()]
+    # Selecting rivals must not replace the subject the questionnaire scoped.
+    subject = str((clar.get("_scope") or {}).get("subject") or "").strip()
+    requested = list(dict.fromkeys(([subject] if subject else []) + (user_brands or _regex_brands(query))))
     try:
         data = chat_json(
             [
@@ -524,8 +469,10 @@ def _plan_research(
                         '"search_angles":["angle phrases appended to each brand, '
                         "e.g. 'pricing plans', 'user reviews', 'product features', "
                         "'2026 latest news', 'market share', 'revenue'\"]}\n\n"
-                        "The product list is confirmed and immutable. Do not add, "
-                        "remove, or rename products. Plan research angles only.\n"
+                        "`brands` must contain real, searchable names AND must "
+                        "include both the subject itself and its main competitors "
+                        "(3-6 total). A report on one company with no comparison "
+                        "is a failed report.\n"
                         f"Give {max_angles} search angles, including at least one "
                         "recency angle so current data surfaces."
                     ),
@@ -549,7 +496,24 @@ def _plan_research(
                           "focus": clar.get("focus"), "max_angles": max_angles},
         )
         if isinstance(data, dict) and (data.get("brands") or user_brands):
-            brands = requested
+            llm_brands = [
+                b for b in (data.get("brands") or []) if isinstance(b, str) and b.strip()
+            ]
+            subject = str(data.get("subject") or "").strip()
+            # Only treat the subject as a brand when it looks like a single
+            # product name — "Notion vs Obsidian for research teams" is a topic,
+            # not something you can search for as a company.
+            subject_ok = bool(subject) and len(subject) <= 40 and not any(
+                k in subject.lower()
+                for k in (" vs ", " versus ", "compar", "analysis", "research",
+                          "landscape", " and ", "/", "market")
+            )
+            merged: List[str] = []
+            for b in requested + ([subject] if subject_ok else []) + llm_brands:
+                b = b.strip()
+                if b and b not in merged:
+                    merged.append(b)
+            brands = merged[:6]
             angles = [
                 a for a in data.get("search_angles", []) if isinstance(a, str)
             ][:max_angles]
@@ -558,7 +522,7 @@ def _plan_research(
             if brands:
                 return {
                     "brands": brands,
-                    "focus": clar.get("focus") or focus or _DEFAULT_FOCUS,
+                    "focus": focus or _DEFAULT_FOCUS,
                     "angles": angles or _DEFAULT_ANGLES,
                     "category": category,
                 }
@@ -568,7 +532,7 @@ def _plan_research(
     fallback_brands = requested
     return {
         "brands": fallback_brands[:6],
-        "focus": clar.get("focus") or list(_DEFAULT_FOCUS),
+        "focus": list(_DEFAULT_FOCUS),
         "angles": list(_DEFAULT_ANGLES[:max_angles]),
         "category": str(clar.get("_category") or "").strip(),
     }
@@ -595,12 +559,18 @@ _BRAND_STOPWORDS = {
 }
 
 
-def _mock_scope_products(query: str) -> List[str]:
-    """Mock recognizes explicit comparisons; it never guesses brands from prose."""
-    parts = re.split(r"\s+(?:vs\.?|versus)\s+", query, flags=re.I)
-    if len(parts) > 1:
-        return [p.split(" for ", 1)[0].strip() for p in parts if not is_category(p)]
-    return [query.strip()] if query.strip().casefold() in VENDOR_DOMAINS else []
+def _regex_brands(query: str) -> List[str]:
+    """Last-resort brand extraction when the planning call fails."""
+    tokens = re.split(r"[,;/\s]+", query)
+    cand = []
+    for t in tokens:
+        clean = t.strip().strip(".,!?'\"")
+        if not clean or clean.lower() in _BRAND_STOPWORDS:
+            continue
+        if len(clean) < 2 or len(clean) > 30 or clean.isdigit():
+            continue
+        cand.append(clean)
+    return cand[:4] if cand else ["Target competitor"]
 
 
 # ── Expert dispatch ───────────────────────────────────────────────────────────
@@ -722,40 +692,59 @@ _FORUM_DOMAINS = (
     "stackoverflow.com", "stackexchange.com", "quora.com", "discourse",
     "community.", "forum.", "forums.", "discuss.",
 )
-def _source_type(url: str, brand: str = "") -> str:
+# Anything with these in the domain is a publication or platform, not a vendor site.
+_NON_OFFICIAL_HINTS = (
+    "blog", "news", "wiki", "medium", "substack", "wordpress", "blogspot",
+    "github.io", "notion.site", "dev.to", "hashnode", "tumblr",
+)
+
+
+def _source_type(url: str) -> str:
     d = domain_of(url)
     full = d + url.lower()
-    def matches(domain: str) -> bool:
-        return d == domain or d.endswith("." + domain)
 
-    if matches("reddit.com"):
+    if "reddit.com" in d:
         return SourceType.REDDIT
-    if matches("news.ycombinator.com"):
+    if "news.ycombinator.com" in d or "ycombinator.com" in d:
         return SourceType.HACKERNEWS
-    if matches("youtube.com") or matches("youtu.be"):
+    if "youtube.com" in d or "youtu.be" in d:
         return SourceType.YOUTUBE
     if d in ("x.com", "twitter.com") or d.endswith(".twitter.com"):
         return SourceType.X
-    if any(matches(k) for k in _REVIEW_DOMAINS):
+    if any(k in d for k in _REVIEW_DOMAINS):
         return SourceType.REVIEW
     if any(k in d for k in _FORUM_DOMAINS):
         return SourceType.FORUM
     # Filings and investor relations.
-    if matches("sec.gov") or (is_vendor_source(url, brand) and any(
+    if any(
         k in full
         for k in ("sec.gov", "/investor", "ir.", "investorrelations", "annualreport",
                   "10-k", "10-q", "8-k", "form-s-1", "edgar")
-    )):
+    ):
         return SourceType.SEC_FILING
-    if any(matches(k) for k in _ANALYST_DOMAINS):
+    if any(k in d for k in _ANALYST_DOMAINS):
         return SourceType.ANALYST
-    if any(matches(k) for k in _NEWS_DOMAINS):
+    if any(k in d for k in _NEWS_DOMAINS):
         return SourceType.NEWS
     if not d:
         return SourceType.WEB
-    if is_vendor_source(url, brand):
+    if _looks_official(d):
         return SourceType.OFFICIAL
     return SourceType.WEB
+
+
+def _looks_official(domain: str) -> bool:
+    """Rough test for a vendor's own site: shallow domain, no publishing markers.
+
+    Deliberately conservative — misclassifying a blog as `official` would inflate
+    its credibility score, so anything ambiguous falls through to `web`.
+    """
+    if any(h in domain for h in _NON_OFFICIAL_HINTS):
+        return False
+    parts = [p for p in domain.split(".") if p]
+    if len(parts) <= 3 and parts and len(parts[0]) <= 24:
+        return True
+    return False
 
 
 def _category_keywords(category: str) -> List[str]:
@@ -841,13 +830,13 @@ def _collect_brand(
         if not is_relevant_content(text, [brand], brand):
             continue
         existing_urls.add(url)
-        stype = _source_type(url, brand)
+        stype = _source_type(url)
         captured = page.get("captured_at", _now())
-        pub_date = r.get("published_at") or ""
+        pub_date = r.get("captured_at", "")
         cred = score_evidence(
             url,
             stype,
-            captured_at=pub_date,
+            captured_at=pub_date or captured,
             has_publish_date=bool(pub_date),
             ok_fetch=bool(ok),
             excerpt=text[:280],
@@ -858,16 +847,15 @@ def _collect_brand(
             source_type=stype,
             title=r.get("title", brand),
             excerpt=text[:280],
-            captured_at=captured,
-            published_at=pub_date or None,
-            full_text=text[:4000],
+            captured_at=pub_date or captured,
             credibility=cred,
             collected_by=collector,
             image_urls=[im["src"] for im in page.get("images", [])][:3],
             brand=brand,
             domain=domain_of(url),
-            freshness_days=freshness_days(pub_date),
+            freshness_days=freshness_days(pub_date or captured),
         )
+        ev._full_text = text[:1500]  # type: ignore[attr-defined]
         out_ev.append(ev)
 
         og = (page.get("og_image") or "").strip()
@@ -946,9 +934,7 @@ def _collect_brand_voices(
                 source_type=stype,
                 title=title or f"{brand} user sentiment",
                 excerpt=text[:280],
-                captured_at=_now(),
-                published_at=published or None,
-                full_text=text[:4000],
+                captured_at=published or _now(),
                 credibility=score_evidence(
                     url, stype, captured_at=published,
                     has_publish_date=bool(published), ok_fetch=False,
@@ -1007,7 +993,7 @@ def _collect_brand_voices(
             url = r.get("url", "")
             title = r.get("title", "")
             text = (r.get("snippet") or title or "").strip()
-            detected = _source_type(url, brand)
+            detected = _source_type(url)
             # Trust the detected type when it is a recognizable platform;
             # otherwise attribute to the platform we were searching.
             platform = plat.key
@@ -1020,7 +1006,7 @@ def _collect_brand_voices(
                         break
             _add(
                 text=text, url=url, title=title, platform=platform,
-                stype=stype, published=r.get("published_at") or "",
+                stype=stype, published=r.get("captured_at", ""),
             )
 
     return {
@@ -1044,10 +1030,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     mode = clar.get("_mode", "deep")
     if mode not in MODE_CONFIG:
         mode = "deep"
-    cfg = dict(MODE_CONFIG[mode])
-    cfg["freshness"] = {"Prioritize the last month": "month",
-                        "Within the last year": "year", "No time limit": "any"}.get(
-                            clar.get("freshness"), cfg["freshness"])
+    cfg = MODE_CONFIG[mode]
     perspective = _normalize_perspective(clar.get("perspective", ""))
 
     t_start = time.monotonic()
@@ -1224,7 +1207,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
             d = ev.to_dict()
             d["domain"] = domain_of(ev.source_url)
             d["brand"] = ev.brand
-            d["full_text"] = ev.full_text
+            d["full_text"] = getattr(ev, "_full_text", "")
             yield _ev("evidence", {**d})
             yield _ev("progress", prog(min(14 + len(evidences), 50), "collect", len(evidences)))
             await asyncio.sleep(0.01)
@@ -1462,7 +1445,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
                             d = ev.to_dict()
                             d["domain"] = domain_of(ev.source_url)
                             d["brand"] = ev.brand
-                            d["full_text"] = ev.full_text
+                            d["full_text"] = getattr(ev, "_full_text", "")
                             yield _ev("evidence", {**d})
                         for fig in res["images"]:
                             images.append(fig)
@@ -1722,11 +1705,11 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     trace.set_context(task_id, verifier, "verify", "Verify the written report")
     verify_review = await asyncio.to_thread(
         llm_report_review, query, brands, cleaned, section_titles, verify_order,
-        claims, vr, _model("aux"), section_notes, persona_block(verifier), evidences,
+        claims, vr, _model("aux"), section_notes, persona_block(verifier),
     )
     for e in _drain_trace():
         yield e
-    merge_llm_findings(vr, verify_review)
+    editorial_findings = merge_llm_findings(vr, verify_review)
     yield _ev(
         "message",
         {
@@ -1740,8 +1723,6 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
     )
 
     rewritten: List[str] = []
-    recheck_status = {}
-    resolved_editorial = []
     verify_rounds_done = 0
     rewrite_budget = cfg.get("verify_max_rewrites", 4)
     for _ in range(cfg.get("verify_rounds", 1)):
@@ -1783,7 +1764,6 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
                 rewrite_directive(findings), draft, persona_block(author),
             )
 
-        round_rewritten = []
         jobs = [asyncio.create_task(_rewrite_one(sid, fs)) for sid, fs in targets]
         for coro in asyncio.as_completed(jobs):
             sid, findings, st = await coro
@@ -1791,7 +1771,14 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
             for e in _drain_trace():
                 yield e
             title = section_titles.get(sid, sid)
-            # Mechanical improvement is provisional until editorial recheck.
+            # Re-run the same checks on the new draft and keep it only if it is
+            # not mechanically worse. A regenerated section is not automatically
+            # an improved one, and shipping a worse draft to look busy beats
+            # nothing. The comparison is deliberately limited to the rule
+            # findings: the reviewer's judgements cannot be re-scored without
+            # another read of the whole report, so a rewrite driven by them is
+            # accepted as long as it introduces no new mechanical defect, and
+            # anything the rules still catch stays open in the report.
             new_clean, new_vr = await asyncio.to_thread(
                 check_sections, {sid: st}, section_titles, valid_evidence_ids,
                 min_paragraphs=cfg["min_paragraphs"], check_duplicates=False,
@@ -1801,13 +1788,12 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
             after_load = score_findings(new_vr.for_section(sid))
             if after_load <= before_load and new_clean[sid]["paragraphs"]:
                 sections_text[sid] = {**sections_text.get(sid, {}), **new_clean[sid]}
-                prior_editorial = [f for f in vr.for_section(sid) if f.kind in LLM_KINDS and not f.auto_fixed]
+                # The old findings described a draft that no longer exists.
                 vr.replace_section(sid, new_vr)
-                vr.findings.extend(prior_editorial)
-                if sid not in rewritten:
-                    rewritten.append(sid)
-                round_rewritten.append(sid)
-                recheck_status[sid] = "pending"
+                editorial_findings = [
+                    f for f in editorial_findings if f.section_id != sid
+                ]
+                rewritten.append(sid)
                 yield _ev(
                     "thought",
                     {
@@ -1815,7 +1801,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
                         "text": f"\"{title}\" rewritten against "
                                 f"{len(findings)} finding(s); the new draft "
                                 f"carries no new defects (load {before_load} → "
-                                f"{after_load}). Pending editorial recheck.",
+                                f"{after_load}). Accepted.",
                         "ts": _now(),
                     },
                 )
@@ -1831,33 +1817,6 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
                         "ts": _now(),
                     },
                 )
-        if round_rewritten:
-            current = dict(sections_text)
-            if sentiment_text.get("paragraphs"):
-                current["sentiment"] = sentiment_text
-            trace.set_context(task_id, verifier, "verify", "Recheck rewritten chapters against prior findings")
-            recheck = await asyncio.to_thread(
-                llm_report_review, query, brands, current, section_titles, verify_order,
-                claims, vr, _model("aux"), section_notes, persona_block(verifier),
-                evidences, round_rewritten,
-            )
-            for e in _drain_trace():
-                yield e
-            for sid in round_rewritten:
-                status = recheck.get("section_status", {}).get(sid, "unavailable")
-                recheck_status[sid] = status
-                if status == "passed":
-                    cleared = [f for f in vr.open if f.section_id == sid and f.kind in LLM_KINDS]
-                    resolved_editorial.extend(f.to_dict() for f in cleared)
-                    vr.findings = [f for f in vr.findings if f not in cleared]
-                # Existing issues remain open on failed or unavailable rechecks.
-            existing = {(f.section_id, f.kind, f.detail) for f in vr.open}
-            fresh = {**recheck, "findings": [f for f in recheck.get("findings", [])
-                     if (f["section_id"], f["kind"], f["detail"]) not in existing]}
-            merge_llm_findings(vr, fresh)
-            verify_review["review_complete"] = verify_review.get("review_complete", False) and recheck.get("review_complete", False)
-            verify_review["review"] += "\n\nRecheck of rewritten chapters:\n" + recheck.get("review", "")
-            verify_review["scores"] = recheck.get("scores", {})
         yield _ev("progress", prog(91, "verify", len(evidences)))
 
     verify_verdict = verdict_of(vr, verify_review)
@@ -1868,9 +1827,6 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         "findings": [f.to_dict() for f in vr.open],
         "fixed": [f.to_dict() for f in vr.fixed],
         "rewritten_sections": [section_titles.get(s, s) for s in rewritten],
-        "recheck_status": recheck_status,
-        "resolved_findings": resolved_editorial,
-        "review_complete": verify_review.get("review_complete", False),
         "rounds": verify_rounds_done,
         "checks": vr.summary(),
     }
@@ -1884,7 +1840,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
                 "revised": f"Verification complete: {len(vr.fixed)} defect(s) "
                            f"repaired, {len(rewritten)} section(s) rewritten. "
                            "Nothing major outstanding.",
-                "flagged": f"Verification complete with {len(vr.open)} unresolved "
+                "flagged": f"Verification complete with {len(vr.majors)} unresolved "
                            "issue(s). They are recorded in the report rather than "
                            "papered over.",
             }[verify_verdict],
@@ -1909,7 +1865,7 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
         structured=structured, elapsed_seconds=elapsed, tokens_used=tokens_used,
         rework_rounds=rework_rounds_done, issues_resolved=issues_resolved,
         verify_rounds=verify_rounds_done,
-        verify_issues_fixed=len(vr.fixed) + len(resolved_editorial),
+        verify_issues_fixed=len(vr.fixed) + len(rewritten),
     )
     metrics = merge_quality_into_metrics(metrics, quality_after.to_dict())
 
@@ -1950,12 +1906,18 @@ async def run_pipeline(task_id: str, sub_id: str = "") -> AsyncIterator[Dict[str
 
 
 # ── Analysis ──────────────────────────────────────────────────────────────────
+def _evidence_digest(evidences: List[Evidence], limit: int = 28) -> str:
+    return "\n".join(
+        f"[{e.evidence_id}|{e.source_type}|{domain_of(e.source_url)}] {e.title}: {e.excerpt}"
+        for e in evidences[:limit]
+    )
+
+
 def _analyze(
     query, brands, focus, evidences: List[Evidence], members: List[str],
     max_tokens_param: int = 8000, review_feedback: str = "",
 ) -> Dict[str, Any]:
-    evidences = select_evidence(evidences, brands=brands, dimensions=focus, limit=28)
-    digest = evidence_digest(evidences, brands=brands, dimensions=focus)
+    digest = _evidence_digest(evidences)
     ev_ids = [e.evidence_id for e in evidences]
     domains_by_id = {e.evidence_id: domain_of(e.source_url) for e in evidences}
     authors = [m for m in members if m.startswith(("L1", "L2"))] or ["L2-001"]
@@ -2044,7 +2006,6 @@ def _analyze(
             temperature=0.4,
             model=_model("core"),
             purpose="Cross-validate evidence into claims and comparison data",
-            evidence_ids=ev_ids,
             task_kind="analyze",
             mock_context={"evidence": [e.to_dict() for e in evidences], "authors": authors},
         )
@@ -2087,8 +2048,7 @@ def _analyze_structured(
     persona: str = "",
 ) -> Dict[str, Any]:
     """Feature tree, pricing model and personas under a strict schema."""
-    evidences = select_evidence(evidences, brands=brands, dimensions=focus, limit=24)
-    digest = evidence_digest(evidences, brands=brands, dimensions=focus)
+    digest = _evidence_digest(evidences, limit=24)
     valid_eids = {e.evidence_id for e in evidences}
     out = {"feature_tree": [], "pricing_model": [], "user_persona": []}
     try:
@@ -2128,7 +2088,6 @@ def _analyze_structured(
             temperature=0.3,
             model=_model("core"),
             purpose="Structured competitive knowledge (features / pricing / personas)",
-            evidence_ids=[e.evidence_id for e in evidences],
             task_kind="structured",
             mock_context={"brands": brands, "evidence": [e.to_dict() for e in evidences]},
         )
@@ -2335,20 +2294,15 @@ def _write_single_section(
         "persp_investor": ["overview", "trend", "swot"],
     }
     fields = field_map.get(sid, ["overview"])
-    rel_claims = [c for c in claims if c.get("field") in fields][:8]
-    section_dimensions = fields if sid in ("feature", "pricing", "persona", "trend", "swot") else focus
-    evidences = select_evidence(evidences, brands=brands, dimensions=section_dimensions,
-                               limit=20, priority_ids=[eid for c in rel_claims for eid in c.get("evidence_ids", [])])
-    digest = evidence_digest(evidences, brands=brands, dimensions=fields)
-    supplied_ids = {e.evidence_id for e in evidences}
-    rel_claims = [c for c in rel_claims if set(c.get("evidence_ids", [])) <= supplied_ids]
+    rel_claims = [c for c in claims if c.get("field") in fields]
+    digest = _evidence_digest(evidences, limit=20)
     claim_text = (
         "\n".join(
             f"- [{','.join(c.get('evidence_ids', [])) or 'no source'}] "
             f"{c['text']} ({c['confidence']})"
             for c in rel_claims[:8]
         )
-        or "(no directly supported claims; identify evidence gaps rather than inventing findings)"
+        or "(no directly related claims — derive your own from the evidence)"
     )
 
     extra = ""
@@ -2446,7 +2400,6 @@ def _write_single_section(
                 if fix_directive
                 else f"Write section: {title}"
             ),
-            evidence_ids=[e.evidence_id for e in evidences],
             task_kind="write_section",
             mock_context={"title": title, "evidence": [e.to_dict() for e in evidences],
                           "min_paragraphs": min_paragraphs, "fix_directive": fix_directive},
@@ -2491,7 +2444,7 @@ def _write_single_section(
                     "content": (
                         f"Section: {title}\nTopic: {query}\n"
                         f"Competitors: {', '.join(brands)}\n"
-                        f"Evidence:\n{digest}"
+                        f"Evidence:\n{digest[:2000]}"
                     ),
                 },
             ],
@@ -2499,7 +2452,6 @@ def _write_single_section(
             temperature=0.7,
             model=model,
             purpose=f"Retry writing section: {title}",
-            evidence_ids=[e.evidence_id for e in evidences],
             task_kind="write_section",
             mock_context={"title": title, "evidence": [e.to_dict() for e in evidences],
                           "min_paragraphs": min_paragraphs, "fix_directive": fix_directive},

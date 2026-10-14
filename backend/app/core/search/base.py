@@ -3,10 +3,7 @@
 Every provider normalizes to the same result shape so the pipeline never knows
 which backend served a query:
 
-    {title, url, snippet, source, captured_at, published_at?, content?}
-
-`captured_at` is retrieval time. `published_at` is the source publication
-date supplied by the provider, or None; retrieval time must never substitute.
+    {title, url, snippet, source, captured_at, content?}
 
 `content` is optional — providers that already return cleaned page text (Tavily,
 Exa) populate it, which lets the collector skip a fetch round-trip.

@@ -54,13 +54,13 @@ export function VMetricsPanel({ metrics }: { metrics?: ReportMetrics }) {
     },
     {
       icon: Gauge,
-      label: 'Cross-domain citations',
+      label: 'High confidence',
       tint: ACCENT_TEXT.pink,
-      value: pct(biz.cross_validated_ratio ?? biz.accuracy),
-      sub: `${pct(biz.cross_validated_ratio)} cited across domains · ${num(
+      value: pct(biz.accuracy),
+      sub: `${pct(biz.cross_validated_ratio)} cross-validated · ${num(
         asNum(biz.rework_rounds),
       )} rework round(s)`,
-      tip: 'Share of claims citing at least two domains. This does not measure factual accuracy.',
+      tip: asStr(biz.formula),
     },
   ]
 

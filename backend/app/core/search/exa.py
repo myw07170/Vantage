@@ -85,8 +85,7 @@ def search(
                 # prompts and hand the full body to the collector separately.
                 "snippet": text[:500],
                 "source": item.get("author") or _domain(url),
-                "captured_at": now_iso(),
-                "published_at": item.get("publishedDate") or None,
+                "captured_at": item.get("publishedDate") or now_iso(),
                 "content": text or None,
             }
         )

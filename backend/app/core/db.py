@@ -61,11 +61,7 @@ def _connect() -> sqlite3.Connection:
         conn.execute("PRAGMA foreign_keys=ON;")
     except sqlite3.Error:
         pass
-    try:
-        _ensure_schema(conn)
-    except BaseException:
-        conn.close()
-        raise
+    _ensure_schema(conn)
     _LOCAL.conn = conn
     return conn
 
@@ -81,40 +77,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         _SCHEMA_READY = True
 
 
-class IncompatibleDatabaseError(RuntimeError):
-    """The database belongs to the newer, versioned application schema."""
-
-
-def _check_schema_compatibility(conn: sqlite3.Connection) -> None:
-    # This application predates user_version and the JSON/version-based tables.
-    # Reject those databases before CREATE IF NOT EXISTS can partially modify
-    # them or fail on an index referencing a legacy column such as brand.
-    version = conn.execute("PRAGMA user_version").fetchone()[0]
-    newer_columns = {
-        "tasks": {"kind", "payload"},
-        "reports": {"current_version_id"},
-        "evidences": {"data"},
-        "traces": {"data"},
-    }
-    incompatible = bool(version)
-    for table, markers in newer_columns.items():
-        present = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-        if present & markers:
-            incompatible = True
-            break
-    if incompatible:
-        raise IncompatibleDatabaseError(
-            f"Database {_DB_PATH} uses a newer, incompatible schema "
-            f"(user_version={version}). No tables or records were changed. "
-            "Stop all Vantage processes and archive the database using the "
-            "SQLite backup API before replacing it with a fresh database, "
-            "or set VANTAGE_DB_PATH to a new database path. "
-            "This application does not automatically reset or downgrade data."
-        )
-
-
 def _init_schema(conn: sqlite3.Connection) -> None:
-    _check_schema_compatibility(conn)
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS tasks (

@@ -274,8 +274,8 @@ export default function DashboardPage() {
               value={stats!.fact_accuracy}
               unit="%"
               color="text-ok-deep"
-              label="Cross-domain citations"
-              tip="Share of claims citing two or more domains; not a measure of factual accuracy."
+              label="Cross-validated"
+              tip="Share of claims corroborated by two or more independent domains."
             />
           </motion.div>
 

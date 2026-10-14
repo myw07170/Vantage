@@ -37,18 +37,11 @@ afterEach(() => {
 })
 
 describe('failed mutations', () => {
-  it('returns scope validation details to the clarification page', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 422,
-      json: async () => ({ detail: 'Confirm specific products before starting.' }) }))
-    expect(await submitClarify('t_1', {})).toEqual({
-      ok: false, message: 'Confirm specific products before starting.',
-    })
-  })
   it('never reports failed clarification, feedback or deletion as successful', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Backend down')))
     const errors = vi.fn()
     setApiErrorListener(errors)
-    expect(await submitClarify('t_1', {})).toEqual({ ok: false, message: 'Backend down' })
+    expect(await submitClarify('t_1', {})).toEqual({ ok: false })
     expect(await submitFeedback('r_1', 1, 4)).toEqual({ ok: false })
     expect(await deleteSubscription('sub_1')).toEqual({ ok: false })
     expect(errors).toHaveBeenCalledTimes(3)

@@ -21,7 +21,6 @@ import datetime as _dt
 import itertools
 import threading
 import uuid
-from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -76,16 +75,6 @@ def set_context(task_id: str, agent_id: str, stage: str, purpose: str) -> None:
 
 def clear_context() -> None:
     _CTX.set({})
-
-
-@contextmanager
-def operation_context(task_id: str, agent_id: str, stage: str, purpose: str):
-    """Attribute an API-triggered operation and restore the caller's context."""
-    token = _CTX.set({"task_id": task_id, "agent_id": agent_id, "stage": stage, "purpose": purpose})
-    try:
-        yield
-    finally:
-        _CTX.reset(token)
 
 
 def _summarize_messages(messages: Any, limit: int = 600) -> str:

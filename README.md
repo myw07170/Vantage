@@ -26,13 +26,6 @@ auditable.
 - **No claim without evidence.** Unsupported conclusions are marked
   `unverified`; citations that do not resolve to collected evidence are removed
   before delivery.
-- **Confirmed product scope.** Review the exact product list on the clarification
-  page before starting. Planning cannot expand it, and market categories are not
-  treated as products. The current modes accept 2–6 products.
-- **Balanced source context.** Analysis and writing receive bounded source text
-  selected across products and relevant dimensions, with supplied evidence IDs
-  recorded in model traces. Publication dates are separate from retrieval times;
-  unavailable dates stay unknown.
 - **Multi-agent staffing.** A 52-specialist roster is selected per brief across
   decision, strategy, and execution layers.
 - **Deep research pipeline.** The run moves through
@@ -45,11 +38,6 @@ auditable.
 - **Annotation-driven follow-up.** Highlight a passage, add a note, and ask the
   system to re-research that section.
 
-Post-write review reads complete chapters in batches and includes source excerpts.
-Rewriting alone does not clear an editorial issue: rewritten chapters are reviewed
-again, and failed or incomplete rechecks retain outstanding findings. Cross-domain
-citation ratios describe sourcing, not measured factual accuracy.
-
 ## Project Status
 
 This repository is suitable for local development and experimentation. It is not
@@ -59,14 +47,13 @@ Current local verification:
 
 | Check | Status |
 |---|---|
-| `uv run pytest` | 126 passed: staffing, providers, API, tasks, collection security, scope/context/review regressions and offline pipelines |
-| `npm run test` in `frontend/` | 12 passed: failed requests, scope validation messages, SSE recovery and report caches |
+| `uv run pytest` | 101 passed: staffing, provider contracts, API, task lifecycle, collection security and offline pipelines |
+| `npm run test` in `frontend/` | 11 passed: failed requests, SSE retries/deduplication/termination and report caches |
 | `npm run build` in `frontend/` | Passes |
 | `npm run lint` in `frontend/` | Passes |
 | LLM smoke tests | Mock runs without a key or model network; Qwen/OpenAI need their own keys |
 | Search smoke tests | DuckDuckGo can run keyless; Exa/Tavily require keys |
 | Live collection + mock quick pipeline | Both Notion and Obsidian collected; 69 evidence records, 7 sections, 46 trace spans |
-| Real Qwen quick pipeline | Confirmed Notion / Obsidian; balanced source context, 66 evidence records, 390.5 seconds, 120,713 tokens; delivered `flagged` with open findings |
 
 Important caveats:
 
@@ -310,21 +297,12 @@ uv run python scripts/smoke_search.py
 uv run python scripts/smoke_llm.py
 uv run python scripts/soak_llm.py
 uv run python scripts/run_pipeline.py --query "Notion vs Obsidian" --mode quick
-uv run python scripts/run_pipeline.py --query "Notion vs Obsidian" --mode quick --products Notion Obsidian --focus "Feature comparison" "Pricing strategy" --out report-demo.json
-uv run python scripts/summarize_report.py report-demo.json --out report-demo.summary.json
 ```
 
 The LLM smoke and soak scripts run without keys or model network in mock mode.
 Real model checks need provider access and quota. Search and full-pipeline scripts
 still use network. `run_pipeline.py` executes the full pipeline headlessly and checks that
 the generated report preserves the core evidence invariants.
-
-The headless runner confirms the supplied `--products` list; if omitted, it
-uses the first three questionnaire options. For a controlled demo, supply the
-exact products explicitly. Set `VANTAGE_DB_PATH` to a separate local database
-when validating, so demo runs do not modify your research history. The report
-summary command is offline and shows per-stage source context distribution,
-model tokens, publication-date gaps, and unresolved findings.
 
 ## Documentation
 
@@ -334,7 +312,6 @@ model tokens, publication-date gaps, and unresolved findings.
 | [docs/AGENTS.md](docs/AGENTS.md) | The 52-analyst roster model, staffing protocol, grounding rules |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Local setup, production notes, and troubleshooting |
 | [docs/REVIEW.md](docs/REVIEW.md) | 修复验收、删除清单、已知风险与未验证项目 |
-| [docs/ITERATION1.md](docs/ITERATION1.md) | 范围确认、证据分配、审查复核及真实 Qwen 验证结果 |
 
 ## Security Notes
 

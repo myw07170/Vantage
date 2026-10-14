@@ -90,8 +90,7 @@ def search(
                 "url": url,
                 "snippet": content[:500],
                 "source": _domain(url),
-                "captured_at": now_iso(),
-                "published_at": item.get("published_date") or None,
+                "captured_at": item.get("published_date") or now_iso(),
                 "content": content or None,
             }
         )

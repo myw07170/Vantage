@@ -51,8 +51,6 @@ class Evidence:
     brand: str = ""
     domain: str = ""
     freshness_days: Optional[int] = None  # days since publication; None if unparseable
-    published_at: Optional[str] = None
-    full_text: str = ""  # bounded source context, separate from the display summary
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

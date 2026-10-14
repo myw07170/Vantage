@@ -46,8 +46,6 @@ class TaskRunner:
                 return self._terminal(task, after, "done", {"reportId": task["report_id"]})
             if status in ("failed", "interrupted"):
                 return self._terminal(task, after, "error", {"message": task["error"]})
-            if task.get("clarifications", {}).get("_questions") and not task["clarifications"].get("_confirmed_products"):
-                raise TaskUnavailable("Confirm the product list on the clarification page before starting research.")
             if not db.claim_task(task_id):
                 raise TaskUnavailable("This task is already running in another backend process.")
             job = Job()

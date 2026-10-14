@@ -144,8 +144,6 @@ export interface Evidence {
   screenshot_path?: string
   image_urls?: string[]
   captured_at: string
-  published_at?: string | null
-  full_text?: string
   credibility: number
   collected_by: string
   brand?: string
@@ -286,9 +284,6 @@ export interface VerifyReview {
   /** Repaired automatically during the check. */
   fixed?: VerifyFinding[]
   rewritten_sections?: string[]
-  review_complete?: boolean
-  recheck_status?: Record<string, 'pending' | 'passed' | 'open' | 'unavailable'>
-  resolved_findings?: VerifyFinding[]
   rounds?: number
   checks?: {
     sections_checked?: number
