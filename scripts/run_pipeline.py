@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from app.core import db  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
-from app.core.orchestrator import create_task, run_pipeline, submit_clarify  # noqa: E402
+from app.core.orchestrator import create_task, run_pipeline, submit_clarify, submit_scope  # noqa: E402
 
 # Event types that are noisy in a terminal unless --verbose.
 _QUIET = {"evidence", "trace", "image", "progress"}
@@ -58,23 +58,35 @@ async def main() -> int:
             print(f"           options: {', '.join(str(o) for o in q['options'][:6])}")
     print()
 
-    # Answer the questionnaire the way a user reasonably would.
-    competitors = next(
-        (q.get("options", []) for q in task.get("clarifyQuestions") or []
-         if q["id"] == "competitors"),
+    # The headless evaluation explicitly accepts the generated interpretation.
+    task = submit_scope(task_id, "yes", task["scopeRevision"])
+    if not task["ok"]:
+        print(f"FAIL  {task['message']}")
+        return 1
+    # Answer the remaining questionnaire the way a user reasonably would.
+    products = next(
+        (q.get("defaultSelected", []) for q in task.get("clarifyQuestions") or []
+         if q["id"] == "products"),
         [],
     )
-    submit_clarify(
+    result = submit_clarify(
         task_id,
         {
-            "competitors": competitors[:3],
+            "products": products,
             "focus": ["Feature comparison", "Pricing strategy", "User sentiment"],
             "perspective": "Product manager",
             "market": "United States",
             "user": "SMB teams",
             "freshness": "Within the last year",
-        },
+        }, revision=task["clarificationRevision"],
     )
+    if result["ok"]:
+        result = submit_clarify(task_id, {"market": "United States"}, revision=result["clarificationRevision"])
+    if result["ok"]:
+        result = submit_clarify(task_id, {}, action="start", revision=result["clarificationRevision"])
+    if not result["ok"]:
+        print(f"FAIL  {result['message']}")
+        return 1
 
     counts: dict[str, int] = {}
     report_id = ""

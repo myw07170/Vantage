@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import AsyncIterator, Callable
 
 from app.core import db, trace
-from app.core.orchestrator import run_pipeline
+from app.core.orchestrator import run_pipeline, scope_is_confirmed, research_is_ready, _selected_products
 
 
 class TaskUnavailable(RuntimeError):
@@ -46,6 +46,15 @@ class TaskRunner:
                 return self._terminal(task, after, "done", {"reportId": task["report_id"]})
             if status in ("failed", "interrupted"):
                 return self._terminal(task, after, "error", {"message": task["error"]})
+            clar = task.get("clarifications") or {}
+            if not scope_is_confirmed(clar):
+                raise TaskUnavailable("Confirm the latest understanding before starting research.")
+            if not research_is_ready(clar):
+                raise TaskUnavailable("Confirm products and market, then choose Start research.")
+            try:
+                _selected_products(task["query"], clar)
+            except ValueError as exc:
+                raise TaskUnavailable(str(exc), 422) from exc
             if not db.claim_task(task_id):
                 raise TaskUnavailable("This task is already running in another backend process.")
             job = Job()

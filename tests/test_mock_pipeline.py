@@ -11,10 +11,16 @@ from app.core import db, llm, orchestrator as pipeline
 
 async def _run(mode="quick"):
     task = pipeline.create_task("Notion vs Obsidian", mode)
-    pipeline.submit_clarify(task["taskId"], {
+    assert pipeline.submit_scope(task["taskId"], "yes", task["scopeRevision"])["ok"]
+    confirmed = pipeline.task_details(db.get_task(task["taskId"]))
+    confirmed = pipeline.submit_clarify(task["taskId"], {
         "competitors": ["Notion", "Obsidian"],
         "focus": ["Feature comparison", "Pricing strategy", "User sentiment"],
-    })
+    }, revision=confirmed["clarificationRevision"])
+    assert confirmed["ok"]
+    confirmed = pipeline.submit_clarify(task["taskId"], {"market": "No preference"}, revision=confirmed["clarificationRevision"])
+    assert confirmed["ok"]
+    assert pipeline.submit_clarify(task["taskId"], {}, action="start", revision=confirmed["clarificationRevision"])["ok"]
     events = [ev async for ev in pipeline.run_pipeline(task["taskId"])]
     done = next((ev for ev in events if ev["type"] == "done"), None)
     report = db.get_report(done["data"]["reportId"]) if done else None

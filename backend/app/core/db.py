@@ -239,14 +239,19 @@ def save_task(task_id: str, query: str, clarifications: Dict[str, Any]) -> None:
         c.commit()
 
 
-def update_task_clarify(task_id: str, clarifications: Dict[str, Any]) -> bool:
+def update_task_clarify(task_id: str, clarifications: Dict[str, Any], *, mark_clarified: bool = True,
+                        expected: Optional[Dict[str, Any]] = None) -> bool:
     with _LOCK:
         c = _connect()
-        changed = c.execute(
-            "UPDATE tasks SET clarifications=?, status='clarified' WHERE task_id=? "
-            "AND status IN ('created','clarified')",
-            (json.dumps(clarifications), task_id),
+        sql = (
+            "UPDATE tasks SET clarifications=?, status=CASE WHEN ? THEN 'clarified' ELSE status END WHERE task_id=? "
+            "AND status IN ('created','clarified')"
         )
+        params = [json.dumps(clarifications), mark_clarified, task_id]
+        if expected is not None:
+            sql += " AND clarifications=?"
+            params.append(json.dumps(expected))
+        changed = c.execute(sql, params)
         c.commit()
         return changed.rowcount == 1
 

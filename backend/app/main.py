@@ -27,6 +27,8 @@ from app.core.orchestrator import (
     create_task,
     refine_section,
     submit_clarify,
+    submit_scope,
+    task_details,
 )
 from app.data import expert_by_id, load_experts
 from app.core.tasks import TaskRunner, TaskUnavailable
@@ -202,25 +204,38 @@ def get_task(task_id: str):
     task = db.get_task(task_id)
     if not task:
         raise HTTPException(404, "Task not found.")
-    clar = task["clarifications"]
-    return {"taskId": task_id, "query": task["query"], "mode": clar.get("_mode", "deep"),
-            "status": task["status"], "reportId": task.get("report_id"),
-            "error": task["error"], "terminalSeq": task["terminal_seq"],
-            "clarifyQuestions": clar.get("_questions", []),
-            "answers": {k: v for k, v in clar.items() if not k.startswith("_")}}
+    return task_details(task)
+
+
+class ScopeBody(BaseModel):
+    answer: Literal["yes", "roughly", "no"]
+    scopeRevision: int = Field(ge=1, strict=True)
+    explanation: str = Field(default="", max_length=4000)
+
+
+@app.post("/api/tasks/{task_id}/scope")
+def post_scope(task_id: str, body: ScopeBody):
+    result = submit_scope(task_id, body.answer, body.scopeRevision, body.explanation)
+    if not result["ok"]:
+        raise HTTPException(result.get("status_code", 409), result["message"])
+    return result
 
 
 class ClarifyBody(BaseModel):
     answers: dict = Field(default_factory=dict)
+    action: Literal["answer", "start", "retry", "products"] = "answer"
+    clarificationRevision: Optional[int] = Field(default=None, ge=1, strict=True)
+    text: str = Field(default="", max_length=4000)
 
 
 @app.post("/api/tasks/{task_id}/clarify")
 def post_clarify(task_id: str, body: ClarifyBody):
     if not db.get_task(task_id):
         raise HTTPException(404, "Task not found.")
-    result = submit_clarify(task_id, body.answers)
+    result = submit_clarify(task_id, body.answers, action=body.action,
+                           revision=body.clarificationRevision, text=body.text)
     if not result["ok"]:
-        raise HTTPException(409, result["message"])
+        raise HTTPException(result.get("status_code", 409), result["message"])
     return result
 
 

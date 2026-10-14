@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 
 
 def _evidence(context: dict) -> list[dict]:
@@ -51,11 +52,18 @@ def _result(kind: str, context: dict):
         return str(context.get("text", "ready"))
     if kind == "json":
         return copy.deepcopy(context.get("result", {}))
-    if kind in ("scope", "plan"):
+    if kind == "scope":
+        # Explicit mock fixtures only; production recognition always calls the LLM.
+        query = str(context.get("query", ""))
+        fixtures = ("Claude Code", "Codex", "Notion", "Obsidian", "Craft")
+        products = [name for name in fixtures if re.search(r"\b" + re.escape(name) + r"\b", query, re.I)]
+        notes = [h["explanation"] for h in context.get("history", [])]
+        brief = query + ((". User corrections: " + "; ".join(notes)) if notes else "")
+        return {"subject": query, "domain": "", "research_brief": brief,
+                "products": products, "competitors": []}
+    if kind == "plan":
         brands = list(dict.fromkeys(str(b).strip() for b in context.get("brands", []) if str(b).strip()))
         subject = brands[0] if brands else str(context.get("query", "")).strip()
-        if kind == "scope":
-            return {"subject": subject, "domain": "", "competitors": brands[1:]}
         return {
             "subject": subject, "category": "", "brands": brands,
             "focus": context.get("focus") or ["Feature comparison", "Pricing strategy", "User sentiment"],
@@ -63,6 +71,9 @@ def _result(kind: str, context: dict):
                               "documentation", "release notes", "customer support", "integrations", "security"]
                              [:context.get("max_angles", 7)],
         }
+    if kind == "clarify":
+        # Mock does not invent preferences or pretend to understand user intent.
+        return {"status": "ready", "context": {}}
     if kind == "dispatch":
         scores = context.get("scores", {})
         candidates = sorted(context.get("candidates", []),

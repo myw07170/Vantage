@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deleteSubscription, openTaskStream, setApiErrorListener, submitClarify, submitFeedback, createTask } from './api'
+import { deleteSubscription, openTaskStream, setApiErrorListener, submitClarify, submitFeedback, submitScope, createTask } from './api'
 import { useTaskStore } from '../store/taskStore'
 
 class FakeEventSource {
@@ -37,11 +37,23 @@ afterEach(() => {
 })
 
 describe('failed mutations', () => {
+  it('submits versioned scope corrections and preserves server errors for retry', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: false, status: 409,
+      json: async () => ({ detail: 'This understanding has changed.' }) })
+    vi.stubGlobal('fetch', fetch)
+    expect(await submitScope('t_1', 'roughly', 2, 'Include IDE workflows')).toEqual({
+      ok: false, message: 'This understanding has changed.',
+    })
+    expect(fetch.mock.calls[0][0]).toBe('/api/tasks/t_1/scope')
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      answer: 'roughly', scopeRevision: 2, explanation: 'Include IDE workflows',
+    })
+  })
   it('never reports failed clarification, feedback or deletion as successful', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Backend down')))
     const errors = vi.fn()
     setApiErrorListener(errors)
-    expect(await submitClarify('t_1', {})).toEqual({ ok: false })
+    expect(await submitClarify('t_1', {})).toMatchObject({ ok: false })
     expect(await submitFeedback('r_1', 1, 4)).toEqual({ ok: false })
     expect(await deleteSubscription('sub_1')).toEqual({ ok: false })
     expect(errors).toHaveBeenCalledTimes(3)

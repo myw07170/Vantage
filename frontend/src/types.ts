@@ -37,12 +37,19 @@ export interface ClarifyQuestion {
   hint?: string
   type: 'single' | 'multi' | 'text' | 'slider'
   options?: string[]
+  defaultSelected?: string[]
+  field?: string
 }
+
+export type ClarificationStage = 'scope' | 'products' | 'market' | 'clarify' | 'ready'
+export type ClarificationAction = 'answer' | 'start' | 'retry' | 'products'
 
 export interface CreateTaskResp {
   taskId: string
   needClarify: boolean
   clarifyQuestions?: ClarifyQuestion[]
+  clarificationStage?: ClarificationStage
+  scopeRevision?: number
 }
 
 export interface TaskDetail {
@@ -55,7 +62,19 @@ export interface TaskDetail {
   terminalSeq: number
   clarifyQuestions: ClarifyQuestion[]
   answers: Record<string, unknown>
+  clarificationStage: ClarificationStage
+  scopeRevision: number
+  researchBrief: string
+  clarificationRevision: number
+  clarificationError: string
+  questionDraft: { selected?: string[]; text?: string }
+  researchContext: Record<string, unknown>
+  canStartResearch: boolean
+  researchReady: boolean
+  productChangeRequested: boolean
 }
+
+export type ScopeAnswer = 'yes' | 'roughly' | 'no'
 
 /* ── SSE stream ──────────────────────────────────────────────────────────── */
 export type SSEEventType =

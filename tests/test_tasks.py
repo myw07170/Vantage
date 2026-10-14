@@ -1,11 +1,33 @@
 """Task ownership and API contracts: reconnects must never rerun research."""
 import asyncio
+import json
 
 import httpx
 import pytest
 
 from app.core import db, orchestrator as pipeline
 from app.core.tasks import TaskRunner, TaskUnavailable
+
+
+def _confirmed_task(query, mode="quick"):
+    task = pipeline.create_task(query, mode)
+    result = pipeline.submit_scope(task["taskId"], "yes", task["scopeRevision"])
+    assert result["ok"]
+    result = pipeline.submit_clarify(task["taskId"], {}, revision=result["clarificationRevision"])
+    assert result["ok"]
+    result = pipeline.submit_clarify(task["taskId"], {"market": "No preference"}, revision=result["clarificationRevision"])
+    assert result["ok"]
+    result = pipeline.submit_clarify(task["taskId"], {}, action="start", revision=result["clarificationRevision"])
+    assert result["ok"]
+    return result
+
+
+async def _answer(api, tid, answers=None, *, action="answer", text=""):
+    task = (await api.get(f"/api/tasks/{tid}")).json()
+    return await api.post(f"/api/tasks/{tid}/clarify", json={
+        "answers": answers or {}, "action": action, "text": text,
+        "clarificationRevision": task["clarificationRevision"],
+    })
 
 
 @pytest.fixture
@@ -40,8 +62,12 @@ async def test_scope_restore_reconnect_feedback_and_subscription(api):
     detail = (await api.get(f"/api/tasks/{tid}")).json()
     assert detail["clarifyQuestions"] == task["clarifyQuestions"]
     assert detail["query"] == "Notion vs Obsidian"
-    assert (await api.post(f"/api/tasks/{tid}/clarify", json={"answers": {
-        "competitors": ["Obsidian"], "_mode": "expert", "_subscription_id": "bogus"}})).status_code == 200
+    assert (await api.post(f"/api/tasks/{tid}/scope", json={
+        "answer": "yes", "scopeRevision": task["scopeRevision"]})).status_code == 200
+    assert (await _answer(api, tid, {
+        "competitors": ["Obsidian"], "_mode": "expert", "_subscription_id": "bogus"})).status_code == 200
+    assert (await _answer(api, tid, {"market": "No preference"})).status_code == 200
+    assert (await _answer(api, tid, action="start")).status_code == 200
     first = await api.get(f"/api/tasks/{tid}/stream")
     assert "event: done" in first.text
     report = db.list_reports()[0]
@@ -86,7 +112,7 @@ async def test_two_subscribers_share_job_and_disconnected_subscriber_does_not_ca
         db.save_report({"id": "r_single", "title": "One report"}, tid)
         db.mark_task_done(tid, "r_single")
         yield {"type": "done", "data": {"reportId": "r_single"}}
-    task = pipeline.create_task("Notion vs Obsidian", "quick")
+    task = _confirmed_task("Notion vs Obsidian", "quick")
     tid = task["taskId"]
     runner = TaskRunner(fake)
     one, two = runner.subscribe(tid), runner.subscribe(tid)
@@ -116,7 +142,7 @@ async def test_failure_and_shutdown_are_terminal_and_not_retried(offline):
         calls.append(tid)
         yield {"type": "progress", "data": {}}
         raise RuntimeError("Provider unavailable")
-    tid = pipeline.create_task("Notion", "quick")["taskId"]
+    tid = _confirmed_task("Notion", "quick")["taskId"]
     runner = TaskRunner(failing)
     events = [e async for e in runner.subscribe(tid)]
     assert events[-1]["type"] == "error" and db.get_task(tid)["status"] == "failed"
@@ -125,7 +151,7 @@ async def test_failure_and_shutdown_are_terminal_and_not_retried(offline):
     async def waiting(tid):
         yield {"type": "progress", "data": {}}
         await asyncio.Event().wait()
-    tid = pipeline.create_task("Obsidian", "quick")["taskId"]
+    tid = _confirmed_task("Obsidian", "quick")["taskId"]
     runner = TaskRunner(waiting)
     stream = runner.subscribe(tid)
     await anext(stream)
@@ -136,7 +162,7 @@ async def test_failure_and_shutdown_are_terminal_and_not_retried(offline):
 
 
 async def test_restart_marks_abandoned_running_tasks(offline):
-    tid = pipeline.create_task("Notion", "quick")["taskId"]
+    tid = _confirmed_task("Notion", "quick")["taskId"]
     assert db.claim_task(tid)
     from app import main
     async with main.lifespan(main.app):
@@ -145,7 +171,7 @@ async def test_restart_marks_abandoned_running_tasks(offline):
 
 
 async def test_shutdown_before_worker_start_releases_reserved_job(offline):
-    tid = pipeline.create_task("Notion", "quick")["taskId"]
+    tid = _confirmed_task("Notion", "quick")["taskId"]
     runner = TaskRunner()
     stream = runner.subscribe(tid)
     await runner.close()
@@ -156,7 +182,7 @@ async def test_shutdown_before_worker_start_releases_reserved_job(offline):
 async def test_fatal_model_errors_never_save_report(api, monkeypatch):
     from app.core.config import Settings
     from app.core.ratelimit import DailyQuotaExhausted
-    tid = pipeline.create_task("Notion vs Obsidian", "quick")["taskId"]
+    tid = _confirmed_task("Notion vs Obsidian", "quick")["taskId"]
     def fatal(*args, **kwargs):
         raise DailyQuotaExhausted("Daily quota exhausted")
     monkeypatch.setattr(pipeline, "chat_json", fatal)
@@ -177,9 +203,90 @@ async def test_fatal_model_errors_never_save_report(api, monkeypatch):
 
 
 async def test_entire_failed_generation_is_not_reported_as_success(api, monkeypatch):
-    tid = pipeline.create_task("Notion vs Obsidian", "quick")["taskId"]
+    tid = _confirmed_task("Notion vs Obsidian", "quick")["taskId"]
     monkeypatch.setattr(pipeline, "_write_single_section", lambda *a, **kw: {
         "paragraphs": ["This section could not be generated."], "highlights": [], "key_takeaway": ""})
     events = await api.get(f"/api/tasks/{tid}/stream")
     assert "All report sections failed" in events.text and "event: done" not in events.text
     assert not db.list_reports()
+
+
+async def test_product_defaults_validation_and_authoritative_selection(api):
+    task = (await api.post("/api/tasks", json={"query": "compare Claude Code and Codex"})).json()
+    tid = task["taskId"]
+    detail = (await api.get(f"/api/tasks/{tid}")).json()
+    assert detail["answers"]["products"] == ["Claude Code", "Codex"]
+    assert [q["id"] for q in detail["clarifyQuestions"]] == ["scope"]
+    detail = (await api.post(f"/api/tasks/{tid}/scope", json={
+        "answer": "yes", "scopeRevision": task["scopeRevision"]})).json()
+    assert next(q for q in detail["clarifyQuestions"] if q["id"] == "products")["defaultSelected"] == ["Claude Code", "Codex"]
+    for invalid in ([], [" "], "Codex", [123]):
+        response = await _answer(api, tid, {"products": invalid})
+        assert response.status_code == 422
+    assert db.get_task(tid)["status"] == "created"
+    # Omitting the field uses the saved defaults.
+    assert (await _answer(api, tid, {"focus": ["Pricing"]})).status_code == 200
+    assert db.get_task(tid)["clarifications"]["products"] == ["Claude Code", "Codex"]
+    selected = [" Codex ", "codex", "Custom Product"]
+    assert (await _answer(api, tid, action="products")).status_code == 200
+    assert (await _answer(api, tid, {"products": selected})).status_code == 200
+    restored = (await api.get(f"/api/tasks/{tid}")).json()
+    assert restored["answers"]["products"] == ["Codex", "Custom Product"]
+    assert restored["answers"]["focus"] == ["Pricing"]
+    # End-to-end: the report does not reintroduce the deselected Claude Code.
+    assert (await _answer(api, tid, {"market": "No preference"})).status_code == 200
+    assert (await _answer(api, tid, action="start")).status_code == 200
+    assert "event: done" in (await api.get(f"/api/tasks/{tid}/stream")).text
+    assert db.list_reports()[0]["brands"] == ["Codex", "Custom Product"]
+
+
+async def test_legacy_unstarted_scope_migrates_once_without_changing_status(api, monkeypatch):
+    db.save_task("t_legacy", "compare Claude Code and Codex", {
+        "_scope": {"subject": "Claude Code vs OpenAI Codex CLI", "competitors": ["Aider"]},
+        "_questions": [], "competitors": ["Aider"], "_mode": "quick",
+    })
+    original = pipeline._discover_scope
+    calls = []
+    def discover(query):
+        calls.append(query)
+        return original(query)
+    monkeypatch.setattr(pipeline, "_discover_scope", discover)
+    for _ in range(2):
+        detail = (await api.get("/api/tasks/t_legacy")).json()
+        assert detail["status"] == "created"
+        assert detail["answers"]["products"] == ["Claude Code", "Codex", "Aider"]
+        assert [q["id"] for q in detail["clarifyQuestions"]] == ["scope"]
+        assert detail["clarificationStage"] == "scope"
+    assert calls == ["compare Claude Code and Codex"]
+    db.mark_task_done("t_legacy", "historical-report")
+    saved = db.get_task("t_legacy")["clarifications"]
+    # Historical tasks are not re-scoped, even if they have the legacy shape.
+    saved["_scope"].pop("products")
+    db._connect().execute("UPDATE tasks SET clarifications=? WHERE task_id=?",
+                         (json.dumps(saved), "t_legacy"))
+    db._connect().commit()
+    await api.get("/api/tasks/t_legacy")
+    assert len(calls) == 1
+
+
+async def test_failed_identification_can_be_corrected_manually(api, monkeypatch):
+    monkeypatch.setattr(pipeline, "chat_json", lambda *a, **kw: None)
+    task = (await api.post("/api/tasks", json={"query": "research an unknown product"})).json()
+    tid = task["taskId"]
+    assert [q["id"] for q in task["clarifyQuestions"]] == ["scope"]
+    assert "could not identify" in task["clarifyQuestions"][0]["hint"]
+    assert (await api.post(f"/api/tasks/{tid}/clarify", json={"answers": {}})).status_code == 409
+    assert (await api.post(f"/api/tasks/{tid}/scope", json={
+        "answer": "yes", "scopeRevision": 1})).status_code == 422
+    monkeypatch.setattr(pipeline, "chat_json", lambda *a, **kw: {
+        "subject": "User supplied product", "domain": "", "products": ["User supplied product"],
+        "competitors": [], "research_brief": "Research User supplied product",
+    })
+    corrected = await api.post(f"/api/tasks/{tid}/scope", json={
+        "answer": "no", "scopeRevision": 1, "explanation": "Research User supplied product"})
+    assert corrected.status_code == 200
+    assert corrected.json()["scopeRevision"] == 2
+    assert (await api.post(f"/api/tasks/{tid}/scope", json={
+        "answer": "yes", "scopeRevision": 2})).status_code == 200
+    assert (await _answer(api, tid)).status_code == 200
+    assert db.get_task(tid)["clarifications"]["products"] == ["User supplied product"]

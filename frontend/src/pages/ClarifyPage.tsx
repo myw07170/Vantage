@@ -1,231 +1,245 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, SkipForward } from 'lucide-react'
-import type { ClarifyQuestion } from '../types'
-import { fetchTask, submitClarify } from '../lib/api'
+import { ArrowRight } from 'lucide-react'
+import type { ClarificationAction, ClarificationStage, ScopeAnswer, TaskDetail } from '../types'
+import { fetchTask, submitClarify, submitScope } from '../lib/api'
+import { clarificationAnswers, mergeProductInput, questionOptionGroups, readDraft, saveDraft } from '../lib/clarification'
 import { VSunGlow } from '../components/ui'
 import { VLogo } from '../components/VLogo'
-import { fadeUp, stagger } from '../lib/motion'
+import { fadeUp } from '../lib/motion'
 
-interface NavState {
-  query?: string
-  clarify?: ClarifyQuestion[]
+const TITLES: Record<ClarificationStage, string> = {
+  scope: 'Let’s confirm the research topic', products: 'Choose the products to research',
+  market: 'Choose your market', clarify: 'A question to focus the research', ready: 'Ready to research',
 }
 
 export default function ClarifyPage() {
   const { taskId } = useParams()
   const navigate = useNavigate()
-  const { state } = useLocation() as { state: NavState | null }
-  const [query, setQuery] = useState(state?.query ?? '')
-  const [questions, setQuestions] = useState<ClarifyQuestion[]>(state?.clarify ?? [])
-  const [loading, setLoading] = useState(!state?.clarify)
-  const [error, setError] = useState('')
+  const location = useLocation()
+  const [task, setTask] = useState<TaskDetail | null>(null)
   const [answers, setAnswers] = useState<Record<string, unknown>>({})
+  const [text, setText] = useState('')
+  const [scopeChoice, setScopeChoice] = useState<ScopeAnswer | ''>('')
+  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [customInputs, setCustomInputs] = useState<Record<string, string>>({})
+  const [error, setError] = useState('')
+  const busy = useRef(false)
+  const input = useRef<HTMLTextAreaElement>(null)
+
+  const applyTask = useCallback((next: TaskDetail) => {
+    const draft = readDraft(next)
+    const restored = clarificationAnswers(next.clarifyQuestions, next.answers)
+    const question = next.clarifyQuestions[0]
+    if (question && next.questionDraft?.selected) {
+      restored[question.id] = question.type === 'multi' ? next.questionDraft.selected : next.questionDraft.selected[0] ?? ''
+    }
+    setTask(next)
+    setAnswers({ ...restored, ...draft.answers })
+    setText(draft.text ?? next.questionDraft?.text ?? '')
+    setScopeChoice('')
+    setError('')
+  }, [])
 
   useEffect(() => {
-    if (state?.clarify || !taskId) return
+    if (!taskId) return
     let disposed = false
-    void fetchTask(taskId).then((task) => {
+    void fetchTask(taskId).then((next) => {
       if (disposed) return
       setLoading(false)
-      if (!task) {
-        setError('Could not load this task. Check the backend and try again.')
-        return
-      }
-      if (task.status === 'done' && task.reportId) {
-        navigate(`/report/${task.reportId}`, { replace: true })
-      } else if (task.status !== 'created' && task.status !== 'clarified') {
-        navigate(`/workspace/${taskId}`, { replace: true })
-      } else {
-        setQuery(task.query)
-        setQuestions(task.clarifyQuestions)
-        setAnswers(task.answers)
-      }
+      if (!next) { setError('Could not load this task. Check the backend and retry.'); return }
+      if (next.status === 'done' && next.reportId) navigate(`/report/${next.reportId}`, { replace: true })
+      else if (!['created', 'clarified'].includes(next.status)) navigate(`/workspace/${taskId}`, { replace: true })
+      else applyTask(next)
     })
     return () => { disposed = true }
-  }, [taskId, state, navigate])
+  }, [taskId, location.key, navigate, applyTask])
 
-  function setSingle(qid: string, val: string) {
-    setAnswers((a) => ({ ...a, [qid]: val }))
-  }
+  useEffect(() => {
+    if (task) saveDraft(task, answers, text)
+  }, [task, answers, text])
 
-  function toggleMulti(qid: string, val: string) {
-    setAnswers((a) => {
-      const cur = (a[qid] as string[]) ?? []
-      return {
-        ...a,
-        [qid]: cur.includes(val) ? cur.filter((v) => v !== val) : [...cur, val],
-      }
-    })
-  }
+  useLayoutEffect(() => {
+    if (!input.current) return
+    input.current.style.height = 'auto'
+    input.current.style.height = `${Math.max(36, Math.min(input.current.scrollHeight, 160))}px`
+  }, [text, task?.clarificationStage, task?.clarificationRevision])
 
-  /** Add competitors the discovery step missed. Accepts a comma-separated list. */
-  function addCustom(qid: string) {
-    const raw = (customInputs[qid] ?? '').trim()
-    if (!raw) return
-    const items = raw
-      .split(/[,;]+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-    setAnswers((a) => {
-      const cur = (a[qid] as string[]) ?? []
-      const merged = [...cur]
-      for (const it of items) if (!merged.includes(it)) merged.push(it)
-      return { ...a, [qid]: merged }
-    })
-    setCustomInputs((c) => ({ ...c, [qid]: '' }))
-  }
-
-  async function go() {
-    if (submitting || !taskId) return
+  async function respondToScope(answer: ScopeAnswer) {
+    if (!task || busy.current) return
+    if (answer === 'yes' && text.trim()) return
+    if (answer !== 'yes' && !text.trim()) { input.current?.focus(); return }
+    busy.current = true
     setSubmitting(true)
     setError('')
     try {
-      const result = await submitClarify(taskId, answers)
-      if (result.ok) navigate(`/workspace/${taskId}`, { state: { query } })
-      else setError('Could not save your answers. Try again before starting research.')
-    } finally {
-      setSubmitting(false)
+      const result = await submitScope(task.taskId, answer, task.scopeRevision, text.trim())
+      if (result.ok) applyTask(result)
+      else setError(result.message)
+    } finally { busy.current = false; setSubmitting(false) }
+  }
+
+  async function advance(action: ClarificationAction = 'answer') {
+    if (!task || busy.current) return
+    busy.current = true
+    setSubmitting(true)
+    setError('')
+    const question = task.clarifyQuestions[0]
+    const currentAnswers = question ? { [question.id]: answers[question.id] ?? (question.type === 'multi' ? [] : '') } : {}
+    try {
+      const result = await submitClarify(task.taskId, currentAnswers, {
+        action, clarificationRevision: task.clarificationRevision, text: action === 'products' || action === 'retry' ? '' : text,
+      })
+      if (!result.ok) { setError(result.message ?? 'Could not save your answer. Retry.'); return }
+      applyTask(result)
+      if (action === 'start' && result.researchReady) navigate(`/workspace/${task.taskId}`, { state: { query: task.query } })
+    } finally { busy.current = false; setSubmitting(false) }
+  }
+
+  function select(value: string) {
+    const question = task?.clarifyQuestions[0]
+    if (!question) return
+    if (question.id === 'scope') {
+      const choice: ScopeAnswer = value.startsWith('Yes') ? 'yes' : value.startsWith('Roughly') ? 'roughly' : 'no'
+      setScopeChoice(choice)
+      if (choice === 'yes') void respondToScope('yes')
+      else input.current?.focus()
+      return
     }
+    setAnswers((prev) => {
+      if (question.type !== 'multi') return { ...prev, [question.id]: prev[question.id] === value ? '' : value }
+      const selected = (prev[question.id] as string[]) ?? []
+      return { ...prev, [question.id]: selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value] }
+    })
+  }
+
+  function addProducts() {
+    setAnswers((prev) => ({ ...prev, products: mergeProductInput((prev.products as string[]) ?? [], text) }))
+    setText('')
   }
 
   if (loading) return <div className="p-8 text-ink-2">Loading task…</div>
+  if (!task) return <div role="alert" className="p-8 text-risk-deep">{error}</div>
+  const stage = task.clarificationStage
+  const question = task.clarifyQuestions[0]
+  const selected = question?.type === 'multi' ? ((answers[question.id] as string[]) ?? []) : []
+  const hasAnswer = Boolean(text.trim() || (question && (question.type === 'multi' ? selected.length : answers[question.id])))
+  const canContinue = stage === 'products'
+    ? mergeProductInput((answers.products as string[]) ?? [], text).length > 0
+    : stage === 'market' || hasAnswer
+  const fieldLabel = stage === 'scope' ? 'Describe a correction'
+    : stage === 'products' ? 'Add another product' : 'Your answer or additional details'
+  const contextLabels: Record<string, string> = {
+    purpose: 'Research goal', audience: 'Target users', perspective: 'Decision perspective',
+    focus: 'Research priorities', constraints: 'Constraints', freshness: 'Evidence recency',
+  }
+  const recencyLabels: Record<string, string> = {
+    day: 'Last 24 hours', week: 'Last week', month: 'Last month', year: 'Last year', any: 'No time limit',
+  }
 
-  return (
-    <div className="relative min-h-screen overflow-y-auto bg-bg">
-      <VSunGlow className="opacity-40" />
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-[720px] flex-col justify-center px-6 py-16">
-        <motion.div
-          variants={fadeUp}
-          initial="initial"
-          animate="animate"
-          className="flex items-center gap-2.5"
-        >
-          <VLogo size={40} alt="Vantage" />
-          <div>
-            <div className="text-h3 text-ink">A few questions before we start</div>
-            <div className="text-aux text-ink-2">
-              These narrow the scope so the team researches the right thing.
-            </div>
+  return <div className="relative min-h-screen overflow-y-auto bg-bg">
+    <VSunGlow className="opacity-40" />
+    <div className="relative z-10 mx-auto flex min-h-screen max-w-[720px] flex-col justify-center px-6 py-16">
+      <motion.div variants={fadeUp} initial="initial" animate="animate" className="flex items-center gap-2.5">
+        <VLogo size={40} alt="Vantage" />
+        <div>
+          <div className="text-h3 text-ink">{TITLES[stage]}</div>
+          <div className="text-aux text-ink-2">
+            {stage === 'scope' ? 'Confirm our understanding before choosing products and research preferences.'
+              : stage === 'clarify' ? 'We only ask for missing information that could change the research.'
+                : 'Your confirmed answers guide the searches, analysis and recommendations.'}
           </div>
-        </motion.div>
-
-        {query && (
-          <motion.div
-            variants={fadeUp}
-            initial="initial"
-            animate="animate"
-            className="mt-5 rounded-card border border-line/60 bg-card p-4 text-aux text-ink-2 shadow-card"
-          >
-            <span className="text-tag text-ink-3">Your request</span>
-            <p className="mt-1 text-body text-ink">{query}</p>
-          </motion.div>
-        )}
-
-        <motion.div
-          variants={stagger}
-          initial="initial"
-          animate="animate"
-          className="mt-6 flex flex-col gap-5"
-        >
-          {questions.map((q) => (
-            <motion.div
-              key={q.id}
-              variants={fadeUp}
-              className="rounded-card border border-line/60 bg-card p-5 shadow-card"
-            >
-              <p className="text-body font-medium text-ink">{q.question}</p>
-              {q.hint && <p className="mt-1 text-tag text-ink-3">{q.hint}</p>}
-
-              {q.type === 'text' ? (
-                <textarea
-                  rows={2}
-                  value={(answers[q.id] as string) ?? ''}
-                  onChange={(e) => setSingle(q.id, e.target.value)}
-                  placeholder="Optional — anything else we should know"
-                  className="mt-3 w-full resize-none rounded-btn border border-line bg-bg px-3 py-2 text-aux text-ink outline-none transition-all focus:border-primary focus:shadow-glow"
-                />
-              ) : (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {Array.from(
-                    new Set([
-                      ...(q.options ?? []),
-                      ...(q.type === 'multi' ? ((answers[q.id] as string[]) ?? []) : []),
-                    ]),
-                  ).map((opt) => {
-                    const selected =
-                      q.type === 'multi'
-                        ? ((answers[q.id] as string[]) ?? []).includes(opt)
-                        : answers[q.id] === opt
-                    return (
-                      <button
-                        key={opt}
-                        onClick={() =>
-                          q.type === 'multi' ? toggleMulti(q.id, opt) : setSingle(q.id, opt)
-                        }
-                        className={`h-9 rounded-chip px-4 text-aux font-medium transition-all ${
-                          selected
-                            ? 'bg-primary-deep text-white shadow-card'
-                            : 'bg-primary-tint text-primary-deep hover:bg-primary-soft/40'
-                        }`}
-                      >
-                        {opt}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
-              {q.id === 'competitors' && (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <input
-                    value={customInputs[q.id] ?? ''}
-                    onChange={(e) =>
-                      setCustomInputs((c) => ({ ...c, [q.id]: e.target.value }))
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        addCustom(q.id)
-                      }
-                    }}
-                    placeholder="Add a competitor we missed — press Enter (comma-separate several)"
-                    className="h-9 min-w-[240px] flex-1 rounded-btn border border-line bg-bg px-3 text-aux text-ink outline-none transition-all focus:border-primary focus:shadow-glow"
-                  />
-                  <button
-                    onClick={() => addCustom(q.id)}
-                    className="h-9 shrink-0 rounded-btn bg-primary-deep px-4 text-aux font-medium text-white hover:bg-primary-deeper"
-                  >
-                    Add
-                  </button>
-                </div>
-              )}
-            </motion.div>
-          ))}
-        </motion.div>
-
-        <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
-          {error && <p role="alert" className="w-full text-aux text-risk-deep">{error}</p>}
-          <button
-            onClick={go}
-            disabled={submitting || questions.length === 0}
-            className="inline-flex items-center gap-1.5 text-aux text-ink-3 transition-colors hover:text-ink-2"
-          >
-            <SkipForward size={15} /> Skip and start now
-          </button>
-          <button
-            onClick={go}
-            disabled={submitting || questions.length === 0}
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-btn bg-primary-deep px-6 font-medium text-white shadow-card transition-all hover:bg-primary-deeper hover:shadow-float active:scale-95 disabled:opacity-50"
-          >
-            {submitting ? 'Assembling the team…' : 'Start research'}
-            <ArrowRight size={18} />
-          </button>
         </div>
+      </motion.div>
+      <div className="mt-5 rounded-card border border-line/60 bg-card p-4 text-aux text-ink-2 shadow-card">
+        <span className="text-tag text-ink-3">Your request</span>
+        <p className="mt-1 text-body text-ink">{task.query}</p>
       </div>
+      {stage !== 'scope' && <div className="mt-4 rounded-card border border-line/60 bg-card p-4 text-aux text-ink-2">
+        <span className="text-tag text-ink-3">Confirmed understanding</span>
+        <p className="mt-1 text-body text-ink">{task.researchBrief}</p>
+        {stage !== 'products' && <p className="mt-2">Products: {(task.answers.products as string[] ?? []).join(', ')}</p>}
+        {task.canStartResearch && <p className="mt-1">Market: {String(task.answers.market ?? 'No preference')}{task.answers.market_notes ? ` — ${task.answers.market_notes}` : ''}</p>}
+      </div>}
+      {task.productChangeRequested && <p role="status" className="mt-4 text-aux text-ink-2">
+        Your answer changes the products. Confirm the updated selections before we continue.
+      </p>}
+      {question && <div key={`${stage}:${task.scopeRevision}:${task.clarificationRevision}`}
+        className="mt-6 rounded-card border border-line/60 bg-card p-5 shadow-card">
+        <p className="text-body font-medium text-ink">{question.question}</p>
+        {question.hint && <p className="mt-1 text-tag text-ink-3">{question.hint}</p>}
+        <div className="mt-3 flex flex-col gap-3">
+          {questionOptionGroups(question, selected).map((group) => <div key={group.label}>
+            {group.label && <p className="mb-2 text-tag text-ink-2">{group.label}</p>}
+            <div className="flex flex-wrap gap-2">{group.options.map((option) => {
+              const choice = option.startsWith('Yes') ? 'yes' : option.startsWith('Roughly') ? 'roughly' : 'no'
+              const pressed = stage === 'scope' ? scopeChoice === choice
+                : question.type === 'multi' ? selected.includes(option) : answers[question.id] === option
+              return <button key={option} type="button" aria-pressed={pressed}
+                disabled={submitting || (stage === 'scope' && choice === 'yes' && Boolean(text.trim()))}
+                onClick={() => select(option)}
+                className={`min-h-9 rounded-chip px-4 py-2 text-aux font-medium transition-all disabled:opacity-50 ${pressed
+                  ? 'bg-primary-deep text-white shadow-card' : 'bg-primary-tint text-primary-deep hover:bg-primary-soft/40'}`}>
+                {option}
+              </button>
+            })}</div>
+          </div>)}
+        </div>
+        <form className="mt-4" onSubmit={(event) => {
+          event.preventDefault()
+          if (stage === 'scope') void respondToScope(scopeChoice === 'no' ? 'no' : 'roughly')
+          else if (stage === 'products') addProducts()
+          else void advance()
+        }}>
+          <label htmlFor="clarification-text" className="text-aux text-ink-2">{fieldLabel}</label>
+          <textarea id="clarification-text" ref={input} rows={1} maxLength={4000} disabled={submitting}
+            value={text} onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => {
+              if (stage === 'products' && event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addProducts() }
+            }}
+            placeholder={stage === 'products' ? 'Product names, separated by commas'
+              : stage === 'scope' ? 'Describe what needs correcting'
+                : 'Write your answer or add details'}
+            className="mt-2 w-full resize-none overflow-y-auto rounded-btn border border-line bg-bg px-3 py-2 text-aux text-ink outline-none focus:border-primary"
+          />
+          {stage === 'scope' && <button type="submit" disabled={submitting || !text.trim()}
+            className="mt-2 rounded-btn bg-primary-deep px-4 py-2 text-aux font-medium text-white disabled:opacity-50">
+            {submitting ? 'Updating our understanding…' : 'Submit correction'}
+          </button>}
+          {stage === 'products' && <button type="submit" disabled={submitting || !text.trim()}
+            className="mt-2 rounded-btn bg-primary-deep px-4 py-2 text-aux font-medium text-white disabled:opacity-50">Add</button>}
+        </form>
+      </div>}
+      {stage === 'ready' && <div className="mt-6 rounded-card border border-line/60 bg-card p-5 shadow-card">
+        <p className="text-body font-medium text-ink">We have enough information to begin.</p>
+        <p className="mt-1 text-aux text-ink-2">The confirmed brief and your answers will guide every research stage.</p>
+        {Object.entries(contextLabels).map(([key, label]) => {
+          const value = task.researchContext[key]
+          return value && (Array.isArray(value) ? value.length > 0 : true)
+            ? <p key={key} className="mt-2 text-aux text-ink-2"><span className="font-medium">{label}:</span> {Array.isArray(value)
+              ? value.join(', ') : key === 'freshness' ? recencyLabels[String(value)] ?? String(value) : String(value)}</p>
+            : null
+        })}
+      </div>}
+      {(error || task.clarificationError) && <div role="alert" className="mt-4 text-aux text-risk-deep">
+        {error || task.clarificationError}
+        {task.clarificationError && <button type="button" disabled={submitting} onClick={() => void advance('retry')}
+          className="ml-2 underline">Retry question generation</button>}
+      </div>}
+      {stage !== 'scope' && <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        {(stage === 'clarify' || stage === 'ready') && <button type="button" disabled={submitting}
+          onClick={() => void advance('products')} className="text-aux text-ink-2 underline">Change products</button>}
+        {stage !== 'ready' && question && <button type="button" disabled={submitting || !canContinue}
+          onClick={() => void advance()} className="ml-auto inline-flex min-h-11 items-center gap-2 rounded-btn bg-primary-deep px-5 py-2 font-medium text-white disabled:opacity-50">
+          {submitting ? 'Saving your answer…' : stage === 'products' ? 'Confirm products'
+            : stage === 'market' ? 'Confirm market' : 'Submit answer'}<ArrowRight size={17} />
+        </button>}
+        {task.canStartResearch && <button type="button" disabled={submitting} onClick={() => void advance('start')}
+          className="inline-flex min-h-11 items-center gap-2 rounded-btn bg-primary-deep px-5 py-2 font-medium text-white disabled:opacity-50">
+          {stage === 'ready' ? 'Start research' : 'Start with current information'}<ArrowRight size={17} />
+        </button>}
+      </div>}
     </div>
-  )
+  </div>
 }
