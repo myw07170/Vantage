@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { fetchTask, openTaskStream } from '../lib/api'
+import { fetchTask, fetchTaskAudit, openTaskStream } from '../lib/api'
 import { useTaskStore } from '../store/taskStore'
 
 /**
@@ -17,6 +17,11 @@ export function useTaskStream(taskId: string | undefined, query: string) {
     reset(taskId, query)
     let disposed = false
     let close: (() => void) | undefined
+    const restoreAudit = () => {
+      void fetchTaskAudit(taskId).then((snapshot) => {
+        if (!disposed && snapshot.task_id) ingest('message', { kind: 'research_snapshot', snapshot })
+      })
+    }
     void fetchTask(taskId).then((task) => {
       if (disposed) return
       if (!task) {
@@ -25,14 +30,19 @@ export function useTaskStream(taskId: string | undefined, query: string) {
         return
       }
       useTaskStore.setState({ query: task.query })
+      if (task.auditSummary && task.status !== 'running') useTaskStore.setState({ auditReview: task.auditSummary })
       if (task.status === 'done' && task.reportId) {
         ingest('done', { reportId: task.reportId }, task.terminalSeq)
       } else if (task.status === 'failed' || task.status === 'interrupted' || task.status === 'done') {
         ingest('error', { message: task.error || 'The report was deleted. Create a new task.' })
         setStreamStatus('closed')
+        restoreAudit()
       } else {
         close = openTaskStream(taskId, {
-          onEvent: (type, data, id) => ingest(type, data, id),
+          onEvent: (type, data, id) => {
+            ingest(type, data, id)
+            if (type === 'error') restoreAudit()
+          },
           onStatus: (status) => setStreamStatus(status),
         })
       }

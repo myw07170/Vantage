@@ -20,9 +20,15 @@ export function VAuditReview({ review }: { review?: AuditReview }) {
   const before = review.before
   const after = review.after
   const hasRework = (review.rework_rounds ?? 0) > 0 && after && after !== before
-  const main: AuditOpinion = (hasRework ? after : before) || {}
+  const main: AuditOpinion = (hasRework || !before?.verdict ? after : before) || {}
   const scoreKeys = Object.keys(main.scores ?? {})
-  const verdictPass = main.verdict !== 'rework'
+  const verdictPass = review.status === 'pass' || (!review.status && main.verdict === 'pass')
+  const verdictLabel = review.simulated || review.status === 'simulated' ? 'Simulated · not verified'
+    : review.status === 'blocked' ? 'Blocked · serious issues remain'
+      : review.status === 'unavailable' ? 'Review unavailable · writing stopped'
+        : review.status === 'pass_with_warnings' ? 'Approved with warnings'
+          : review.status === 'reviewing' ? 'Review in progress'
+            : verdictPass ? '✓ Approved' : '⟲ Rework required'
 
   const scoreColor = (v: number) =>
     v >= 80 ? 'text-ok-deep' : v >= 60 ? 'text-warn-deep' : 'text-risk-deep'
@@ -46,7 +52,7 @@ export function VAuditReview({ review }: { review?: AuditReview }) {
             verdictPass ? 'bg-ok/15 text-ok-deep' : 'bg-risk/15 text-risk-deep'
           }`}
         >
-          {verdictPass ? '✓ Approved' : '⟲ Sent back for rework'}
+          {verdictLabel}
         </span>
       </div>
 
@@ -131,6 +137,26 @@ export function VAuditReview({ review }: { review?: AuditReview }) {
           </span>
         </div>
       )}
+      {!!review.history?.length && <details className="mt-4 text-tag text-ink-2">
+        <summary className="cursor-pointer font-semibold">Review history ({review.history.length})</summary>
+        {review.history.map((entry) => <div key={entry.round} className="mt-2 rounded-btn border border-line p-3">
+          <div className="font-semibold">{entry.round === 0 ? 'Initial review' : `Repair round ${entry.round}`} · {entry.review.verdict}</div>
+          <p className="mt-1 whitespace-pre-wrap">{entry.review.review}</p>
+          <ul className="mt-1 space-y-1">{entry.review.issues?.map((text, i) => <li key={i}>{text}</li>)}</ul>
+        </div>)}
+      </details>}
+      {!!review.issue_outcomes?.length && <details className="mt-4 text-tag text-ink-2">
+        <summary className="cursor-pointer font-semibold">Issue outcomes</summary>
+        <ul className="mt-2 space-y-2">{review.issue_outcomes.map((item, i) => <li key={`${item.issue_id}-${i}`}>
+          <span className="font-semibold">{item.status?.replaceAll('_', ' ')} · {item.severity === 'high' ? 'Serious' : 'Minor'}</span>
+          <p>{item.brand} {item.dimension}: {item.reason}</p>
+          {item.resolution && <p>{item.resolution}</p>}
+        </li>)}</ul>
+      </details>}
+      {!!review.unknowns?.length && <div className="mt-4 rounded-btn border border-warn/40 p-3 text-tag text-ink-2">
+        <div className="font-semibold">Unknown or undisclosed · excluded from scoring and recommendations</div>
+        <ul className="mt-2 space-y-1">{review.unknowns.map((item, i) => <li key={i}>{item.brand} · {item.dimension}: {item.reason}</li>)}</ul>
+      </div>}
     </div>
   )
 }

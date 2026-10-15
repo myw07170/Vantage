@@ -48,6 +48,49 @@ def _section(context: dict) -> dict:
 
 
 def _result(kind: str, context: dict):
+    if kind == "writing_notes":
+        units = context["units"]
+        return {"accounted_unit_ids": [u["unit_id"] for u in units], "notes": [
+            {"text": "[MOCK] Supplied materials indexed; no model inference performed.",
+             "evidence_ids": list(dict.fromkeys(i for u in units for i in u["evidence_ids"]))}]}
+    if kind == "writing_plan_review":
+        return {"verdict": "pass", "issues": [], "simulated": True}
+    if kind == "writing_plan":
+        # Development-only outline reflects supplied dimensions, never inferred facts.
+        focus, units, assets = context["focus"], context["units"], context["assets"]
+        eids = [u["unit_id"] for u in units if u["kind"] == "evidence"]
+        cids = [u["unit_id"] for u in units if u["kind"] == "claim"]
+        chapters = []
+        allocation = max(1, context["target_words"] // (len(focus) + 1))
+        for i, dim in enumerate(focus):
+            components = []
+            low = dim.lower()
+            for key, asset in assets.items():
+                if (("pric" in low and asset["kind"] == "pricing_model") or
+                    ("feature" in low and asset["kind"] == "feature_tree") or
+                    ("sentiment" in low and asset["kind"] == "sentiment")):
+                    components.append({"kind": asset["kind"], "ref": key, "caption": ""})
+            chapters.append({"id": f"question_{i + 1}", "title": dim, "role": "body",
+                "goal": "[MOCK] Present supplied source notes for " + dim, "answers": [dim], "depends_on": [],
+                "evidence_ids": eids, "claim_ids": cids, "data_refs": [], "components": components,
+                "target_words": allocation, "author": context["members"][0]})
+        chapters.insert(0, {"id": "summary", "title": "Research brief", "role": "summary",
+            "goal": "[MOCK] Summarize the available source notes without analytical inference.",
+            "answers": [], "depends_on": [c["id"] for c in chapters], "claim_ids": cids, "evidence_ids": eids,
+            "data_refs": [], "components": [], "target_words": allocation, "author": context["members"][0]})
+        used = set(eids + cids + [a["ref"] for c in chapters for a in c["components"]])
+        return {"title": "[MOCK] " + context["query"], "purpose": context["query"],
+            "thesis": "[MOCK] Source notes only; no model argument was generated.", "brands": context["brands"],
+            "chapters": chapters, "unused_material": [{"id": u["unit_id"], "reason": "[MOCK] Not assigned in the simulated outline."}
+                                                       for u in units if u["unit_id"] not in used]}
+    if kind == "writing_edit":
+        return copy.deepcopy(context["draft"])
+    if kind == "writing_assertions":
+        return {"accounted_blocks": [b["unit_id"] for b in context["blocks"]], "assertions": []}
+    if kind == "writing_support":
+        return {"checks": [{"unit_id": u["unit_id"], "status": "supported",
+                            "reason": "[MOCK] Simulated support check.", "fix": "", "basis": "official_fact",
+                            "supporting_evidence_ids": u["evidence_ids"]} for u in context["units"]]}
     if kind == "echo":
         return str(context.get("text", "ready"))
     if kind == "json":

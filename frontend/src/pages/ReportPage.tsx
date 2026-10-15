@@ -43,9 +43,10 @@ import { VDataGrid } from '../components/VDataGrid'
 import VSidebar from '../layout/VSidebar'
 import VShellFallback from '../layout/VShellFallback'
 import { VFeatureMatrix, VPricingTable, VPersonaCards } from '../components/VStructured'
+import { VReportComponents, VWrittenJudgments } from '../components/VReportComponents'
 import { refineSection, submitFeedback } from '../lib/api'
 import { VCountUp } from '../components/ui'
-import { formatDate, plural, truncate } from '../lib/format'
+import { formatDate, plural } from '../lib/format'
 
 const HL_DOT: Record<HighlightColor, string> = {
   sun: 'bg-sun',
@@ -154,8 +155,8 @@ export default function ReportPage() {
         // noise to a writer being asked to go deeper.
         const quoted = stripCitations(h.text)
         return h.comment
-          ? `${h.comment} (regarding: ${truncate(quoted, 60)})`
-          : `Go deeper on: ${truncate(quoted, 80)}`
+          ? `${h.comment} (regarding: ${quoted})`
+          : `Go deeper on: ${quoted}`
       })
     if (notes.length === 0) {
       flash('Highlight or annotate something in this section first')
@@ -571,7 +572,9 @@ export default function ReportPage() {
                 <VDataGrid grid={sec.data_grid} title={`${sec.title} · data`} />
               )}
 
-              {sec.id === 'sentiment' && r.sentiment && (
+              <VReportComponents components={sec.components} onCite={jumpToEvidence} evIndex={evIndex} />
+              <VWrittenJudgments assertions={sec.written_assertions} />
+              {!sec.components && sec.id === 'sentiment' && r.sentiment && (
                 <div className="mt-5">
                   <VSentimentPanel sentiment={r.sentiment} />
                 </div>
@@ -595,7 +598,7 @@ export default function ReportPage() {
                 </div>
               )}
 
-              {!NON_REFINABLE.includes(sec.id) && (
+              {(sec.chapter_plan || !NON_REFINABLE.includes(sec.id)) && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => handleRefine(sec.id)}

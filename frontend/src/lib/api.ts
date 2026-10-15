@@ -1,4 +1,5 @@
 import type {
+  AuditSnapshot,
   CreateTaskResp,
   DashboardStats,
   EvidenceQueryResp,
@@ -96,6 +97,10 @@ export async function createTask(
 
 export async function fetchTask(taskId: string): Promise<TaskDetail | null> {
   return safeJson<TaskDetail | null>(`/api/tasks/${taskId}`, undefined, null)
+}
+
+export async function fetchTaskAudit(taskId: string): Promise<AuditSnapshot> {
+  return safeJson<AuditSnapshot>(`/api/tasks/${taskId}/audit`, undefined, {})
 }
 
 export async function submitClarify(

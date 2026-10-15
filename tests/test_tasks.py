@@ -54,6 +54,32 @@ async def test_invalid_requests_do_not_create_tasks(api):
         TaskRunner().subscribe("missing")
 
 
+async def test_audit_block_preserves_read_only_research_after_reconnect(api, monkeypatch):
+    from app.core.audit import issue
+    monkeypatch.setattr(pipeline, "_settings", pipeline._settings.model_copy(
+        update={"llm_provider": "qwen", "qwen_api_key": "offline-test"}))
+    problem = issue("claim", "Unsupported essential claim", brand="Notion")
+    monkeypatch.setattr(pipeline, "llm_quality_review", lambda *a, **k: {
+        "verdict": "rework", "scores": {}, "review": "Needs repair", "findings": [problem],
+        "issues": [problem["reason"]], "suggestions": [], "resolutions": []})
+    task = _confirmed_task("Notion vs Obsidian")
+    tid = task["taskId"]
+    assert (await api.get(f"/api/tasks/{tid}/audit")).json() == {}
+    result = await api.get(f"/api/tasks/{tid}/stream")
+    assert "audit_blocked" in result.text and "event: done" not in result.text
+    detail = (await api.get(f"/api/tasks/{tid}")).json()
+    assert detail["status"] == "failed" and detail["reportId"] is None
+    assert detail["auditSummary"]["status"] == "blocked"
+    restored = (await api.get(f"/api/tasks/{tid}/audit")).json()
+    assert restored["evidence"][0]["full_text"] and restored["analysis"]["claims"]
+    assert len(restored["audit_review"]["history"]) == 3
+    assert restored["trace"] and (await api.get(f"/api/tasks/{tid}/trace")).json()["spans"]
+    assert "audit_blocked" in (await api.get(f"/api/tasks/{tid}/stream")).text
+    assert (await api.get(f"/api/tasks/{tid}/audit")).json() == restored
+    assert not db.list_reports()
+    assert (await api.get("/api/tasks/missing/audit")).status_code == 404
+
+
 async def test_scope_restore_reconnect_feedback_and_subscription(api):
     subscription = (await api.post("/api/subscriptions", json={"query": "Notion vs Obsidian"})).json()
     task = (await api.post("/api/tasks", json={"query": "Notion vs Obsidian", "mode": "quick",

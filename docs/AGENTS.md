@@ -102,11 +102,16 @@ the brief's focus areas.
 | sentiment | User Feedback Specialist (L1-030) |
 | analyze | The strategy advisor whose specialism best fits the brief's focus areas |
 | audit / verify | The quality officer (L3-003) |
-| write | Pricing to pricing/finance, risk to compliance/finance, market trends to competitive strategy/finance; unassigned sections to the chief analyst |
+| write | The validated writing plan assigns each demand-driven chapter to an actual staffed analyst; assignment follows chapter goals and role expertise, rather than fixed section IDs. |
 
 Section authorship is not cosmetic. Each section carries its assigned analyst's
 persona, so different sections are argued from different expertise, and a
-rewrite ordered by the verify stage goes back to whoever wrote it.
+rewrite ordered by the verify stage goes back to whoever wrote it. Dependencies
+use completed predecessor arguments. Independent chapters may run concurrently;
+planned summaries and recommendations follow the body and refresh after relevant
+body repair. All authors share factual conditions, unknowns and the same source
+constraints. The quality officer checks complete prose and independently extracted
+judgments against saved sources before a real report can be delivered.
 
 ## Catalog compatibility
 
@@ -151,9 +156,13 @@ class Issue:
 ```
 
 Rework routes by cause: insufficient evidence sends a `REWORK` envelope to
-`collect`; a missing dimension or empty schema sends one to `analyze`. Each
-round recomputes quality and records `issues_resolved` alongside the before and
-after metrics.
+`collect`, followed by `analyze`; analysis defects send one to `analyze` directly.
+Both main and structured analysis receive the latest issue-specific instructions.
+Each round includes a new evidence-aware review. Quick, Deep and Expert allow
+2, 3 and 5 repair rounds respectively, excluding the initial review. Serious
+issues remaining after the cap block writing; unavailable model review also
+blocks writing. Saved task research remains readable without a finished report.
+`issues_resolved` counts confirmed issue closures, not score improvements.
 
 ## Evidence and claims
 
@@ -186,8 +195,10 @@ than from the model's own assessment:
    ([`schemas._filter_eids`](../backend/app/core/schemas.py)), so a fabricated
    source cannot make a claim look supported.
 
-2. **Cross-validation.** High confidence requires two or more independent
-   domains. Two citations from the same site is corroboration, not verification.
+2. **Cross-validation.** High confidence requires independent sources; sibling
+   domains and near copies do not count separately. A single verified original
+   official source can support a published fact passing audit without upgrading
+   its confidence. Critical comparisons and inferences require independent support.
 
 3. **Rework closes the loop.** When quality falls short, work goes back to
    collection or analysis. The bar does not move to accommodate a weak result.

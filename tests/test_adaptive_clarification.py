@@ -257,4 +257,5 @@ async def test_context_reaches_search_analysis_writing_review_and_recency_filter
     assert pipeline.MODE_CONFIG["quick"]["freshness"] == "year"
     report = db.get_report(db.list_reports()[0]["id"])
     assert report["research_context"]["purpose"] == "Select a tool for a regulated team"
-    assert any(s["id"] == "persp_user" for s in report["sections"])
+    assert "Buyer / end user" in str(report["writing_plan"])
+    assert all(s.get("chapter_plan") for s in report["sections"])

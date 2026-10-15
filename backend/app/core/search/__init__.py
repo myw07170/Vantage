@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+import uuid
 from typing import List, Optional
 
 from app.core import trace
@@ -203,6 +204,7 @@ def multi_search(
     site: Optional[str] = None,
     freshness: str = Freshness.ANY,
     task_id: str = "",
+    query_log: Optional[list] = None,
 ) -> list[dict]:
     """Run several queries and merge, de-duplicating by URL.
 
@@ -213,9 +215,13 @@ def multi_search(
     out: list[dict] = []
     for q in queries:
         try:
-            for r in search(
+            rows = search(
                 q, num=num, site=site, freshness=freshness, task_id=task_id
-            ):
+            )
+            if query_log is not None:
+                query_log.append({"search_id": "s_" + uuid.uuid4().hex[:12], "query": q,
+                                  "site": site, "status": "success", "result_count": len(rows)})
+            for r in rows:
                 url = r.get("url", "")
                 key = url or r.get("title", "")
                 if not key or key in seen:
@@ -223,6 +229,9 @@ def multi_search(
                 seen.add(key)
                 r["query"] = q
                 out.append(r)
-        except Exception:
+        except Exception as exc:
+            if query_log is not None:
+                query_log.append({"search_id": "s_" + uuid.uuid4().hex[:12], "query": q,
+                                  "site": site, "status": "error", "error": str(exc)})
             continue
     return out

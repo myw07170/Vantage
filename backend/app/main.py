@@ -215,6 +215,13 @@ def get_task(task_id: str):
     return task_details(task)
 
 
+@app.get("/api/tasks/{task_id}/audit")
+def get_task_audit(task_id: str):
+    if not db.get_task(task_id):
+        raise HTTPException(404, "Task not found.")
+    return db.get_task_audit(task_id)
+
+
 class ScopeBody(BaseModel):
     answer: Literal["yes", "roughly", "no"]
     scopeRevision: int = Field(ge=1, strict=True)

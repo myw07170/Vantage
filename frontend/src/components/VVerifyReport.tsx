@@ -31,7 +31,7 @@ export function VVerifyReport({ review }: { review?: VerifyReview }) {
   const verdict = review.verdict ?? 'pass'
   const scoreKeys = Object.keys(review.scores ?? {})
 
-  const badge = {
+  const badge = review.simulated ? { cls: 'bg-info/15 text-info-deep', text: 'Simulated · not verified' } : {
     pass: { cls: 'bg-ok/15 text-ok-deep', text: '✓ Verified' },
     revised: { cls: 'bg-primary-tint text-primary-deep', text: '✎ Corrected before delivery' },
     flagged: { cls: 'bg-warn/15 text-warn-deep', text: '⚠ Shipped with open issues' },
@@ -61,9 +61,8 @@ export function VVerifyReport({ review }: { review?: VerifyReview }) {
         <div className="min-w-0 flex-1">
           <div className="text-aux font-semibold text-ink">Report verification</div>
           <div className="text-tag text-ink-3">
-            After writing, every inline citation is checked against the collected
-            evidence and the sections are read against each other for
-            contradictions and unsupported claims.
+            {review.simulated ? 'Offline simulation. Real evidence support and cross-chapter consistency have not been verified.'
+              : 'Complete written text, highlights and captions are checked against sources and reviewed for contradictions and unsupported claims.'}
           </div>
         </div>
         <span className={`rounded-chip px-3 py-1 text-tag font-semibold ${badge.cls}`}>
@@ -130,7 +129,7 @@ export function VVerifyReport({ review }: { review?: VerifyReview }) {
             sign-off
           </div>
           <ul className="mt-2 space-y-1.5">
-            {open.slice(0, 8).map((f) => (
+            {open.map((f) => (
               <FindingRow key={f.finding_id} finding={f} />
             ))}
           </ul>

@@ -50,7 +50,9 @@ never blocks while a page is being fetched or a model is thinking.
 | `sentiment.py` | Sentiment classification, opinion camps, representative quotes. |
 | `credibility.py` | Deterministic 0-100 evidence scoring. No model involved. |
 | `audit.py` | Quality evaluation, the LLM reviewer, and rework routing. |
-| `verify.py` | Post-write checks on the finished document: citation validation, formatting repair, editorial review, rewrite routing. |
+| `writing.py` | Demand-driven planning, complete material indexing, dependency groups, source-linked chapter writing and editorial integration. |
+| `written_review.py` | Independent assertion extraction from complete prose, original-source checks and cross-chapter consistency review. |
+| `verify.py` | Mechanical citation/format checks, full-document review routing and bounded chapter repair. |
 | `schemas.py` | Tolerant coercion into feature tree / pricing / persona, with citation filtering. |
 | `metrics.py` | Impact metrics, each with its formula. |
 | `charts.py` | ECharts option builders. |
@@ -78,7 +80,7 @@ questions, and neither can answer the other's.
 | **collect** | Per competitor: multi-angle search → fetch → relevance filter → `Evidence` with a credibility score. Then user voice across every registered platform. |
 | **analyze** | Cross-validation into claims, plus the structured feature/pricing/persona objects. Sentiment is classified here. |
 | **audit** | Rule-based quality evaluation plus a model review that scores each dimension. Either passes or emits `REWORK` envelopes. |
-| **write** | Sections written in parallel, paced by the rate limiter. Charts built from real analysis output. |
+| **write** | Validated user-specific outline → dependency groups → source-linked chapters → editorial integration → refreshed final summary/advice when planned. Independent chapters run in parallel. |
 | **verify** | The finished prose is checked and repaired, then read as a whole for contradictions and unsupported claims. Failing sections are rewritten. |
 | **done** | Metrics computed, report assembled and persisted, traces saved, analyst stats updated. |
 
@@ -92,9 +94,9 @@ questions, and neither can answer the other's.
 | Strategy analysts | 1–2 | 2–3 | 3–4 |
 | Total analysts | 6–7 | 7–8 | 8–9 |
 | Pages fetched per brand | 6 | 12 | 16 |
-| Sections | 5 | 9 | 12 |
-| Rework rounds | 0 | 1 | 2 |
-| Min paragraphs/section | 3 | 5 | 7 |
+| Default English word target (elastic) | ~1,500 | ~4,000 | ~8,000 |
+| Rework rounds | 2 | 3 | 5 |
+| Outline / paragraph floor | Dynamic / none | Dynamic / none | Dynamic / none |
 | Verify rounds | 1 | 1 | 2 |
 | Max section rewrites | 2 | 4 | 6 |
 
@@ -116,47 +118,142 @@ taking precedence.
 
 ### Rework
 
-`audit.decide_rework()` routes by cause, which is what makes the loop converge
-instead of re-running everything:
+The initial audit does not consume a repair round. Each repair round performs
+targeted collection when needed, then one unified analysis pass (claims and
+structured data), followed by another evidence-aware model review. Both analysis
+calls receive the latest issues and fixes. Collection-only repairs also re-analyze,
+including when no new source was found. Every affected brand is eligible; the
+mode's existing per-brand angle/page budgets still apply each round.
 
-- thin evidence for a brand → back to **collect** with extra angles
-- an uncovered dimension or an empty schema → back to **analyze**, with the
-  reviewer's specific findings injected into the prompt
+All evidence reaches analysis in bounded packets, balanced across brands with new
+and repair-related material first. Citations are restricted to the packet actually
+provided. The gate reviews every claim, structured assertion and chart dataset,
+plus a brand-by-requested-dimension checklist. Review packets include relevant
+passages from saved text and distinguish body text, snippets and comments. The
+fetcher still retains at most 4,000 characters per webpage; this is not a claim to
+have read the entire original source.
 
-After the loop, a second review runs. Improvement is measured as the maximum of
-three signals — rule-issue delta, reviewer-issue delta, and the number of score
-dimensions that went up — because the reviewer regenerates its issue list each
-round, which makes raw counts noisy.
+A published fact may use one verified original official source. Critical
+comparisons/inferences need two independent sources; sibling subdomains and near
+copies do not establish independence. URL source-type heuristics alone do not
+establish official ownership. Scores are informative, never a substitute for
+resolving an issue. Stable issue IDs track confirmed corrections, removals,
+declared unknowns, open issues and newly found issues.
+
+Unknown/undisclosed information can satisfy a requested dimension only with
+successful targeted search provenance or a reviewed non-disclosure source. Tool
+failures do not prove absence. Unknowns cannot justify scores, rankings or
+recommendations. Unsupported optional schemas need not be filled merely to make
+the report look complete.
+
+The gate stops early on approval. After the repair cap, unresolved serious issues
+block writing; minor issues may ship as explicit warnings. Model failure or
+incomplete review output stops writing instead of falling back to approval.
+Mock remains an explicitly labelled simulation, without semantic verification.
+
+Before audit and after each round, task research is saved in the additive
+`tasks.audit_data` JSON column. `GET /api/tasks/{id}/audit` returns the saved
+evidence text, analysis, structured data, sentiment, query outcomes, round history
+and trace. Task details expose an optional `auditSummary`. Blocked/unavailable
+tasks retain the existing `failed` status and emit `audit_blocked` or
+`audit_unavailable`; no report is created. Refresh restores the research viewer.
+Successful reports keep the existing `audit_review.before/after` fields and add
+history, final status, issue outcomes, coverage and unknowns. SSE analysis snapshots
+replace earlier claims. There is no automatic resume or gate override.
+
+### Demand-driven writing
+
+After audit passes, `writing_plan` chooses the title, chapter count, ordering,
+answer goals, authors from the staffed team, dependencies, source assignments,
+word targets and typed components. It sees the confirmed purpose, audience,
+focus, market and constraints. SWOT, five forces, moat, sentiment, summary,
+recommendations and appendices are optional; focus coverage does not require a
+chapter per dimension. Explicit user length takes precedence over mode defaults.
+Thin evidence is a reason for concise writing, not padding.
+
+All saved evidence (including `full_text` and content provenance), audited claims,
+structured results, datasets and limitations enter a source-linked index. Bounded
+packets split oversized units with fragment IDs; no first-N evidence/claim cutoffs
+or per-schema string clipping is used. Every input fragment must be accounted for.
+The fetcher's existing 4,000-character webpage retention limit is unchanged.
+The plan records assignments, unused reasons and chapters that read each material.
+Related sources are read in full as stored; oversized chapter inputs become
+source-linked notes with original IDs. Notes guide writing; assertion verification
+returns to saved original source text rather than treating notes as proof.
+
+Outline validation checks confirmed products, user questions, available sources
+and components, authors, dependencies/cycles and word allocations. A separate
+model check assesses actual goals, overlap, scope and argument quality. Invalid
+planning receives one corrective retry with concrete errors; a second failure
+saves research and planning attempts and stops with `write_planning_failed`.
+There is no fixed-outline fallback.
+
+Writers share source-linked factual notes, names, conditions, uncertainties and
+research constraints. Topological groups run sequentially; independent chapters
+within a group run concurrently. Dependencies receive actual completed paragraphs
+and argument summaries, not only the outline. Long chapters continue with their
+completed content and outstanding goals. If planned, summary/recommendations are
+written after the body, even when displayed first. One full editorial integration
+pass handles transitions, terminology, duplication and certainty, then final
+chapters are refreshed from the edited body. Every retry, rewrite and annotation
+refinement retains the same research/evidence constraints.
+
+Only existing typed prose, structured cards, tables, charts and sentiment
+components can be attached. Chart values are built by program code from research
+data; model-generated HTML and executable code are not supported. Chapter IDs,
+authors and components are read from plan metadata. Legacy reports without
+`writing_plan` keep their historical rendering and can still be refined.
 
 ### Verification
 
-`verify.py` gates the artifact rather than the analysis, in two layers.
+`verify.py` gates the document rather than the pre-writing analysis.
+Deterministic checks repair formatting, resolve citation IDs and report empty or
+truncated text, duplicated paragraphs and invalid percentages. There is no
+minimum paragraph requirement. A real citation ID alone does not prove support.
 
-**Rules, applied and repaired in code.** Every `[e_xxxx]` marker in the prose is
-resolved against the collected evidence: real ids are normalized and collected
-per section, ids matching nothing are removed. Leftover markdown, literal `\n`,
-doubled spacing and stray asterisks are stripped. Truncated paragraphs, the
-writer's failure placeholder, empty sections, duplicated paragraphs and
-impossible shares (a percentage over 100 in share context — growth rates are
-left alone) are recorded as findings.
+The entire takeaway, every paragraph, highlight and component caption is read in
+bounded batches. `writing_assertions` independently extracts substantive facts,
+inferences and recommendations from the actual text, with exact quotations;
+author-declared assertions do not substitute for this pass. `writing_support`
+checks each extracted assertion against original saved evidence and verified
+premises, including dates, billing conditions, products, numbers, source ownership
+and independence. Official published facts may use one applicable original
+official source; comparisons and empirical inferences require independent support.
+Logical inferences and conditional recommendations may connect verified facts,
+but must expose their premises and applicability. Audited unknowns can only be
+reported as gaps; they cannot justify ranks, scores or recommendations.
 
-**A single editorial read.** One model call sees every section at once — the
-only stage that does — and looks for contradictions between sections,
-quantitative assertions with nothing behind them, hedged claims restated as
-fact, and repetition.
+Complete-text notes and the independently extracted ledger supply whole-report
+consistency review: cross-chapter disagreement, missing core answers, repetition,
+strengthened certainty, and final chapters inconsistent with the actual body.
+The old approximately 700-character section previews are not used for new reports
+or refinement. Malformed/incomplete review output or model failure stops delivery
+with `verify_unavailable`; it cannot downgrade to rule-only approval.
 
-**Remediation is rewriting, never rework.** Nothing goes back to collection or
-analysis: a section with one major finding, or two minor ones, is rewritten
-against the same evidence with its own defects named in the prompt. The new
-draft is re-checked and kept only if it is not mechanically worse than the one
-it replaces, so a regeneration cannot quietly degrade the report. Anything still
-open when the rewrite budget runs out ships as a visible `flagged` verdict with
-the findings listed — the report says what is wrong with it rather than hiding
-it.
+Repair never triggers collection. The existing per-mode rounds (1/1/2) and body
+rewrite budgets (2/4/6) remain. Repairs follow the dependency graph and retain the
+same source context and issue directives. Mechanically worse candidates are not
+accepted. Dependent summary/advice chapters are refreshed at most once per repair
+round from revised body results. All changed text is re-extracted, source-checked
+and reviewed again; a rewrite never automatically closes semantic findings.
+Serious unresolved factual, inference or consistency issues stop delivery with
+`verify_blocked`; only minor remaining findings can ship visibly flagged. Mock
+can ship simulated output and explicitly states no real evidence verification.
 
-The sentiment section is checked but never rewritten: it is written from the
-computed sentiment table, so its figures are sourced by construction and it
-carries no inline citations by design.
+The existing `tasks.audit_data` snapshot and read-only audit API also retain the
+writing plan, material use, stage drafts/history, assertion/source-check records,
+verification and errors. Planning/writing/verification failures keep `failed` task
+status and create no formal report. The workspace restores sources, outline,
+drafts and issues after refresh. `writing_plan` and replacement `writing_draft`
+SSE events keep live writing state current. Successful reports carry optional
+plan/chapter/component/assertion metadata; older JSON remains readable.
+
+Annotation refinement reads the selected chapter's goal, actual dependency
+context and all saved sources through the same writer/reviewer. It preserves a
+failed candidate instead of replacing the original on serious target issues.
+Cross-chapter findings are saved and shown by the verification panel; other
+chapters, including user edits, are never silently overwritten. No automatic
+resume or verification bypass is added.
 
 ## Model routing
 

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { Check, Loader2, RotateCcw, Circle } from 'lucide-react'
+import { Check, Loader2, RotateCcw, Circle, AlertTriangle } from 'lucide-react'
 import type { DAGNode } from '../types'
 import { useExpertStore } from '../store/expertStore'
 import { VAvatar } from './VAvatar'
@@ -48,6 +48,9 @@ export function VFlowDag({ nodes }: { nodes: DAGNode[] }) {
 }
 
 function NodeDot({ status }: { status: DAGNode['status'] }) {
+  if (status === 'failed') return <span className="grid h-6 w-6 place-items-center rounded-full bg-risk/15 text-risk-deep" title="Stage stopped">
+    <AlertTriangle size={13} />
+  </span>
   if (status === 'done')
     return (
       <span className="grid h-6 w-6 place-items-center rounded-full bg-primary-deep text-white">

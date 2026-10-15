@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import type {
+  AuditReview,
+  AuditSnapshot,
+  WritingPlan,
   ChartSpec,
   Claim,
   DAGNode,
@@ -49,6 +52,15 @@ export interface StreamMessage {
   suggestions?: string[]
   // verify_rewrite payload
   sections?: string[]
+  claims?: Claim[]
+  structured?: Record<string, unknown>
+  audit_review?: AuditReview
+  snapshot?: AuditSnapshot
+  round?: number
+  simulated?: boolean
+  writing_plan?: WritingPlan
+  section_id?: string
+  draft?: { paragraphs?: string[]; key_takeaway?: string; highlights?: string[] }
 }
 
 // Must match DAG_NODES in backend/app/core/orchestrator.py — this is the
@@ -88,6 +100,11 @@ interface TaskState {
   streamStatus: StreamStatus
   /** Highest server event id ingested — everything at or below is a replay. */
   lastEventId: number
+  auditReview?: AuditReview
+  researchSnapshot?: AuditSnapshot
+  structured?: Record<string, unknown>
+  writingPlan?: WritingPlan
+  writingDrafts?: AuditSnapshot['drafts']
 
   reset: (taskId: string, query: string) => void
   ingest: (type: SSEEventType, data: unknown, id?: number) => void
@@ -151,6 +168,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       error: null,
       streamStatus: 'connecting',
       lastEventId: 0,
+      auditReview: undefined,
+      researchSnapshot: undefined,
+      structured: undefined,
+      writingPlan: undefined,
+      writingDrafts: undefined,
     }),
 
   setStreamStatus: (streamStatus) => set({ streamStatus }),
@@ -192,6 +214,36 @@ export const useTaskStore = create<TaskState>((set, get) => ({
           patch.industryModules = msg.industry_modules ?? []
         }
         if (msg.kind === 'claim' && msg.claim) patch.claims = [...s.claims, msg.claim]
+        if (msg.kind === 'analysis_snapshot') {
+          patch.claims = msg.claims ?? []
+          patch.structured = msg.structured
+        }
+        if (msg.kind === 'audit_review') {
+          const opinion = { verdict: msg.verdict, scores: msg.scores, review: msg.review,
+            issues: msg.issues, suggestions: msg.suggestions, simulated: msg.simulated }
+          patch.auditReview = { ...s.auditReview, status: 'reviewing',
+            before: s.auditReview?.before ?? opinion, after: opinion,
+            simulated: msg.simulated, rework_rounds: msg.round ?? 0,
+            history: [...(s.auditReview?.history ?? []), { round: msg.round ?? 0, review: opinion }] }
+        }
+        if (msg.kind === 'audit_result') patch.auditReview = msg.audit_review
+        if (msg.kind === 'writing_plan') patch.writingPlan = msg.writing_plan
+        if (msg.kind === 'writing_draft' && msg.section_id && msg.draft) {
+          patch.writingDrafts = { ...s.writingDrafts, [msg.section_id]: msg.draft }
+        }
+        if (msg.kind === 'research_snapshot' && msg.snapshot) {
+          patch.researchSnapshot = msg.snapshot
+          patch.auditReview = msg.snapshot.audit_review
+          patch.evidences = msg.snapshot.evidence ?? []
+          patch.claims = msg.snapshot.analysis?.claims ?? []
+          patch.structured = msg.snapshot.structured
+          patch.traces = msg.snapshot.trace ?? []
+          patch.writingPlan = msg.snapshot.writing_plan ?? undefined
+          patch.writingDrafts = msg.snapshot.drafts
+          if (['blocked', 'unavailable'].includes(msg.snapshot.audit_review?.status ?? '')) {
+            patch.nodes = s.nodes.map((node) => node.id === 'audit' ? { ...node, status: 'failed' } : node)
+          }
+        }
         set(patch)
         return
       }

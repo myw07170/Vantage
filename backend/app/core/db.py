@@ -183,6 +183,7 @@ _LATE_COLUMNS: Dict[str, Dict[str, str]] = {
     "tasks": {
         "terminal_seq": "INTEGER NOT NULL DEFAULT 0",
         "error": "TEXT NOT NULL DEFAULT ''",
+        "audit_data": "TEXT NOT NULL DEFAULT '{}'",
     },
     "reports": {
         "starred": "INTEGER NOT NULL DEFAULT 0",
@@ -264,6 +265,19 @@ def get_task(task_id: str) -> Optional[Dict[str, Any]]:
     d = dict(row)
     d["clarifications"] = json.loads(d.get("clarifications") or "{}")
     return d
+
+
+def save_task_audit(task_id: str, snapshot: Dict[str, Any]) -> None:
+    with _LOCK:
+        c = _connect()
+        c.execute("UPDATE tasks SET audit_data=? WHERE task_id=?",
+                  (json.dumps(snapshot, ensure_ascii=False), task_id))
+        c.commit()
+
+
+def get_task_audit(task_id: str) -> Dict[str, Any]:
+    row = _connect().execute("SELECT audit_data FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+    return json.loads(row["audit_data"] or "{}") if row else {}
 
 
 def mark_task_done(task_id: str, report_id: str) -> None:

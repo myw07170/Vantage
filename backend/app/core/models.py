@@ -51,6 +51,8 @@ class Evidence:
     brand: str = ""
     domain: str = ""
     freshness_days: Optional[int] = None  # days since publication; None if unparseable
+    full_text: str = ""
+    content_kind: str = "snippet"  # body | snippet | comment
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

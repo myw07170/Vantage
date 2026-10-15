@@ -24,6 +24,8 @@ import { VAvatar } from '../components/VAvatar'
 import { VIndustryModule } from '../components/VIndustryModule'
 import { VLogo } from '../components/VLogo'
 import { VCountUp } from '../components/ui'
+import { VAuditReview } from '../components/VAuditReview'
+import { VAuditMaterials } from '../components/VAuditMaterials'
 import { plural } from '../lib/format'
 import { ACCENT_TEXT } from '../lib/accents'
 
@@ -50,6 +52,10 @@ export default function WorkspacePage() {
     error,
     streamStatus,
     query: savedQuery,
+    auditReview,
+    researchSnapshot,
+    writingPlan,
+    writingDrafts,
   } = useTaskStore()
   const byId = useExpertStore((s) => s.byId)
 
@@ -188,7 +194,18 @@ export default function WorkspacePage() {
             ) : null}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            {thoughts.length === 0 ? (
+            <VAuditReview review={auditReview} />
+            {writingPlan && !researchSnapshot && <details className="mb-4 rounded-card border border-line bg-card p-4 text-aux text-ink-2" open>
+              <summary className="cursor-pointer font-semibold">{writingPlan.title}</summary>
+              <p className="mt-2">{writingPlan.purpose}</p>
+              <ol className="mt-3 space-y-2">{writingPlan.chapters.map((chapter) => <li key={chapter.id}>
+                <span className="font-medium">{chapter.title}</span>
+                <span className="ml-2 text-tag text-ink-3">{writingDrafts?.[chapter.id] ? 'Draft ready' : 'Pending'}</span>
+                <div className="text-tag">{chapter.goal}</div>
+              </li>)}</ol>
+            </details>}
+            {researchSnapshot && <VAuditMaterials snapshot={researchSnapshot} />}
+            {thoughts.length === 0 && !researchSnapshot ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-ink-3">
                 <motion.div
                   animate={{ rotate: 360 }}

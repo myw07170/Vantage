@@ -208,16 +208,16 @@ def fetch_page(
                         html = redecoded
                         break
 
-        text = _extract_text(html) or fallback_snippet
-        if text and is_garbled(text):
-            text = fallback_snippet
+        extracted = _extract_text(html)
+        degraded = not extracted or is_garbled(extracted)
+        text = fallback_snippet if degraded else extracted
         result.update(
             {
                 "text": text[:4000],
                 "images": _extract_images(html, current_url)[:6],
                 "og_image": _extract_og_image(html, current_url),
                 "ok": True,
-                "degraded": False,
+                "degraded": degraded,
             }
         )
     except UnsafeURL as exc:

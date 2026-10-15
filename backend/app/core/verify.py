@@ -9,8 +9,9 @@ left into a rewrite list.
 This is the artifact-side counterpart to `audit.py`. Audit gates the *analysis*
 before it is written up; verify gates the *document* that came out. Nothing here
 routes work back to collection or analysis: a section that fails is rewritten
-against the same evidence, and anything still failing after the rewrite budget
-is reported rather than quietly shipped.
+against the same evidence. Serious unresolved findings prevent delivery; minor
+remaining findings are displayed. New report review reads complete text in
+batches and independently checks its assertions against original saved sources.
 
 The citation checker is the reason this module exists. The writer is told to
 mark supporting evidence inline as `[e_xxxx]`, and it does — but nothing
@@ -443,212 +444,6 @@ def check_sections(
     return cleaned, vr
 
 
-# ── Editorial review ──────────────────────────────────────────────────────────
-def _report_digest(
-    sections: Dict[str, Dict[str, Any]],
-    titles: Dict[str, str],
-    order: Sequence[str],
-    notes: Optional[Dict[str, str]] = None,
-    body_chars: int = 700,
-) -> str:
-    out = []
-    for sid in order:
-        st = sections.get(sid)
-        if not st:
-            continue
-        body = " ".join(st.get("paragraphs") or [])
-        note = (notes or {}).get(sid)
-        out.append(
-            f"[{sid}] {titles.get(sid, sid)}\n"
-            + (f"  note: {note}\n" if note else "")
-            + f"  takeaway: {st.get('key_takeaway') or '(none)'}\n"
-            f"  body: {body[:body_chars]}"
-        )
-    return "\n\n".join(out) or "(no sections)"
-
-
-def llm_report_review(
-    query: str,
-    brands: List[str],
-    sections: Dict[str, Dict[str, Any]],
-    titles: Dict[str, str],
-    order: Sequence[str],
-    claims: List[Dict[str, Any]],
-    vr: VerifyReport,
-    model: Optional[str] = None,
-    section_notes: Optional[Dict[str, str]] = None,
-    persona: str = "",
-) -> Dict[str, Any]:
-    """A copy editor's read of the finished document.
-
-    Rules catch dead citations and broken structure. They cannot tell whether the
-    conclusion in section 7 contradicts the one in section 1, or whether a
-    confident number is actually backed by anything, so this asks a model to read
-    the whole report at once — the only stage that ever sees it whole. Falls back
-    to a rules-only verdict when the call fails.
-
-    `persona` is the quality officer's preamble, built by the caller so this
-    module stays independent of the roster.
-    """
-    from app.core.llm import chat_json, raise_if_fatal
-
-    claim_lines = (
-        "\n".join(
-            f"- [{c.get('confidence','?')}] {c.get('text','')} "
-            f"(sources: {', '.join(c.get('evidence_ids') or []) or 'none'})"
-            for c in claims[:16]
-        )
-        or "(no claims)"
-    )
-    open_rule_findings = [f for f in vr.open][:6]
-    rule_lines = (
-        "\n".join(f"- [{f.severity}] {f.detail}" for f in open_rule_findings)
-        or "(rules found nothing outstanding)"
-    )
-    # Deliberately free of counts: this text is shown next to the final tallies,
-    # which keep moving as sections are rewritten after the review runs.
-    fallback = {
-        "verdict": "revise" if vr.majors else "pass",
-        "scores": _rule_scores(vr),
-        "review": (
-            "The editorial read could not run — the model was unavailable or out "
-            "of quota — so this verdict rests on the automated checks alone. "
-            "Citation validity, formatting and structure were still verified; "
-            "cross-section consistency was not."
-        ),
-        "findings": [],
-    }
-
-    try:
-        data = chat_json(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        (
-                            persona
-                            or "You are the quality officer on a competitive-"
-                            "intelligence team.\n\n"
-                        )
-                        + "You are reading the finished report before it ships. "
-                        "You are the only reviewer who sees every section at "
-                        "once, so cross-section problems are yours to catch.\n\n"
-                        "Look for, in priority order:\n"
-                        "1. CONTRADICTION — two sections reaching opposite verdicts "
-                        "on the same question (who leads, who is cheaper, where the "
-                        "market is going), or a conclusion that contradicts the "
-                        "claim list.\n"
-                        "2. UNSUPPORTED — a specific figure, share, growth rate or "
-                        "confident verdict with no cited evidence id nearby and no "
-                        "matching claim.\n"
-                        "3. OVERSTATED — a hedged or low-confidence claim restated "
-                        "as settled fact.\n"
-                        "4. VAGUE — a sentence that would be true of any company in "
-                        "any market.\n"
-                        "5. REPETITION — the same point made twice across sections.\n\n"
-                        "Judge only what is in front of you. Do not invent problems "
-                        "to look thorough: a clean report should come back with an "
-                        "empty findings list and a 'pass' verdict. Reference each "
-                        "finding by the bracketed section id. Where a section "
-                        "carries a `note`, it explains where that section's numbers "
-                        "come from — respect it and do not report those figures as "
-                        "unsupported.\n\n"
-                        "Severity: 'major' for contradictions and unsupported "
-                        "quantitative or verdict-level assertions; 'minor' for "
-                        "everything else.\n\n"
-                        "Score each dimension 0-100 as an integer, using the full "
-                        "range rather than round multiples of ten.\n\n"
-                        'Return JSON only: {"verdict":"pass|revise","scores":'
-                        f'{{"{DIM_CITATION}":int,"{DIM_CONSISTENCY}":int,'
-                        f'"{DIM_SUPPORT}":int,"{DIM_EDITORIAL}":int}},'
-                        '"review":"one paragraph on what holds up and what does not",'
-                        '"findings":[{"section_id":"the id in brackets",'
-                        '"severity":"major|minor",'
-                        '"kind":"unsupported|contradiction|overstated|vague|repetition",'
-                        '"detail":"the specific problem, quoting the text",'
-                        '"fix":"what the rewrite should do"}]}'
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Research topic: {query}\n"
-                        f"Competitors: {', '.join(brands)}\n\n"
-                        f"Claims the analysis established:\n{claim_lines}\n\n"
-                        f"Defects the automated checks already found:\n{rule_lines}\n\n"
-                        f"The report as written:\n\n"
-                        f"{_report_digest(sections, titles, order, section_notes)}"
-                    ),
-                },
-            ],
-            max_tokens=3000,
-            temperature=0.2,
-            model=model,
-            purpose="Verify the written report: citations, consistency, support",
-            task_kind="report_review",
-            mock_context={"rule_review": fallback},
-        )
-        if isinstance(data, dict) and (data.get("scores") or data.get("findings")):
-            scores = {str(k): _clamp(v) for k, v in (data.get("scores") or {}).items()}
-            return {
-                "verdict": "revise" if str(data.get("verdict")) == "revise" else "pass",
-                "scores": scores or fallback["scores"],
-                "review": str(data.get("review") or fallback["review"]),
-                "findings": _coerce_findings(data.get("findings"), sections),
-            }
-    except Exception as exc:
-        raise_if_fatal(exc)
-        pass
-    return fallback
-
-
-def _rule_scores(vr: VerifyReport) -> Dict[str, int]:
-    """Scores derived from the rule checks alone, for when the model call fails."""
-    kept = vr.counters.get("citations_kept", 0)
-    dropped = vr.counters.get("citations_dropped", 0)
-    citation = round(100 * kept / (kept + dropped)) if (kept + dropped) else 60
-    open_load = score_findings(vr.open)
-    editorial = max(0, 100 - 8 * open_load)
-    return {
-        DIM_CITATION: citation,
-        DIM_CONSISTENCY: 70,
-        DIM_SUPPORT: max(0, 100 - 10 * len(vr.majors)),
-        DIM_EDITORIAL: editorial,
-    }
-
-
-def _clamp(v: Any) -> int:
-    try:
-        return max(0, min(100, int(round(float(v)))))
-    except (TypeError, ValueError):
-        return 0
-
-
-def _coerce_findings(
-    raw: Any, sections: Dict[str, Dict[str, Any]]
-) -> List[Dict[str, Any]]:
-    """Keep only findings that name a section we actually wrote."""
-    out: List[Dict[str, Any]] = []
-    for item in raw if isinstance(raw, list) else []:
-        if not isinstance(item, dict):
-            continue
-        sid = str(item.get("section_id") or "").strip().strip("[]")
-        detail = str(item.get("detail") or "").strip()
-        if sid not in sections or not detail:
-            continue
-        kind = str(item.get("kind") or "other").lower()
-        out.append(
-            {
-                "section_id": sid,
-                "severity": SEV_MAJOR if str(item.get("severity")) == "major" else SEV_MINOR,
-                "kind": kind if kind in LLM_KINDS else "other",
-                "detail": detail[:400],
-                "fix": str(item.get("fix") or "").strip()[:300],
-            }
-        )
-    return out[:12]
-
-
 def merge_llm_findings(vr: VerifyReport, review: Dict[str, Any]) -> List[Finding]:
     """Fold the reviewer's findings into the rule report, and return them.
 
@@ -710,11 +505,24 @@ def verdict_of(vr: VerifyReport, review: Dict[str, Any]) -> str:
     """Final verdict after the rewrite budget is spent.
 
     `pass` — nothing outstanding. `revised` — defects were found and dealt with.
-    `flagged` — major defects survived the rewrites and the reader is told so,
-    which is the honest outcome when the budget runs out mid-problem.
+    `flagged` — unresolved findings remain visible. The orchestrator blocks
+    delivery separately when any of them is serious.
     """
-    if vr.majors:
+    if vr.open:
         return "flagged"
     if vr.findings or (review.get("findings") or []):
         return "revised"
     return "pass"
+
+
+def llm_report_review(query, brands, sections, titles, order, claims, vr, model=None, section_notes=None, persona="", *, writing_plan=None, evidences=None, analysis=None):
+    # Historical reports get a minimal contextual outline, never a truncated
+    # preview or a weaker rule-only fallback.
+    if writing_plan is None:
+        writing_plan = {"chapters": [{"id": sid, "title": titles.get(sid, sid),
+                         "goal": titles.get(sid, sid), "components": []} for sid in order]}
+    from app.core.llm import chat_json
+    from app.core.written_review import review_document
+    return review_document(query, brands, sections, titles, order, claims, vr, model, persona,
+                           writing_plan, [e.to_dict() if hasattr(e, "to_dict") else e for e in evidences or []],
+                           analysis or {}, chat_json)

@@ -9,7 +9,7 @@
 /* ── Experts ─────────────────────────────────────────────────────────────── */
 export type ExpertLevel = 'L1' | 'L2' | 'L3'
 export type ExpertGroup = 'decision' | 'strategy' | 'industry' | 'function'
-export type ExpertStatus = 'idle' | 'working' | 'done' | 'rework'
+export type ExpertStatus = 'idle' | 'working' | 'done' | 'rework' | 'failed'
 
 export interface Expert {
   id: string
@@ -81,6 +81,7 @@ export interface TaskDetail {
   status: 'created' | 'clarified' | 'running' | 'done' | 'failed' | 'interrupted'
   reportId: string | null
   error: string
+  auditSummary?: AuditReview | null
   terminalSeq: number
   clarifyQuestions: ClarifyQuestion[]
   answers: Record<string, unknown>
@@ -177,6 +178,8 @@ export type SourceType =
   | 'unknown'
 
 export interface Evidence {
+  full_text?: string
+  content_kind?: 'body' | 'snippet' | 'comment'
   evidence_id: string
   source_url: string
   source_type: string
@@ -248,7 +251,68 @@ export interface ReportSection {
   refined?: boolean
   /** Rewritten by the verify stage after a defect was found in the first draft. */
   rewritten?: boolean
+  chapter_plan?: WritingChapter
+  components?: ReportComponent[]
+  written_assertions?: WrittenAssertion[]
 }
+
+export interface WritingChapter {
+  id: string
+  title: string
+  role: 'body' | 'summary' | 'recommendations' | 'limitations'
+  goal: string
+  answers: string[]
+  depends_on: string[]
+  claim_ids: string[]
+  evidence_ids: string[]
+  data_refs: string[]
+  author: string
+  target_words: number
+  components: { kind: ReportComponent['kind']; ref: string; caption?: string }[]
+}
+
+export interface MaterialUsage {
+  id: string
+  kind: string
+  chapters: string[]
+  read_by: string[]
+  reason: string
+}
+
+export interface WritingPlan {
+  version: number
+  title: string
+  purpose: string
+  core_questions?: string[]
+  thesis: string
+  target_words: number
+  chapters: WritingChapter[]
+  material_usage: MaterialUsage[]
+}
+
+export interface WrittenAssertion {
+  assertion_id: string
+  section_id: string
+  quote: string
+  text: string
+  kind: 'fact' | 'inference' | 'recommendation'
+  evidence_ids: string[]
+  premise_claim_ids: string[]
+  conditions?: string
+  is_new?: boolean
+}
+
+export type ReportComponent = {
+  ref: string
+  title?: string
+  caption?: string
+  evidence_ids?: string[]
+} & (
+  { kind: 'feature_tree' | 'pricing_model' | 'user_persona'; data: Record<string, unknown>[] } |
+  { kind: 'chart'; chart: ChartSpec } |
+  { kind: 'data_grid'; data: DataGrid } |
+  { kind: 'sentiment'; data: SentimentResult }
+)
 
 export interface ReportMetrics {
   efficiency?: Record<string, unknown>
@@ -293,6 +357,21 @@ export interface AuditOpinion {
   review?: string
   issues?: string[]
   suggestions?: string[]
+  simulated?: boolean
+  findings?: AuditIssue[]
+}
+
+export interface AuditIssue {
+  issue_id: string
+  target: string
+  brand: string
+  dimension: string
+  severity: 'high' | 'low'
+  reason: string
+  fix: string
+  action: string
+  status?: 'new' | 'still_open' | 'corrected' | 'removed' | 'declared_unknown'
+  resolution?: string
 }
 
 export interface AuditReview {
@@ -300,6 +379,31 @@ export interface AuditReview {
   after?: AuditOpinion
   rework_rounds?: number
   issues_resolved?: number
+  status?: 'reviewing' | 'pass' | 'pass_with_warnings' | 'blocked' | 'unavailable' | 'simulated'
+  simulated?: boolean
+  history?: { round: number; review: AuditOpinion; issue_outcomes?: AuditIssue[] }[]
+  issue_outcomes?: AuditIssue[]
+  unknowns?: { brand: string; dimension: string; reason: string; search_ids?: string[]; evidence_ids?: string[] }[]
+  coverage_matrix?: { brand: string; dimension: string; status: string }[]
+}
+
+export interface AuditSnapshot {
+  writing_plan?: WritingPlan | null
+  writing_status?: string
+  writing_error?: string
+  material_usage?: MaterialUsage[]
+  drafts?: Record<string, { paragraphs?: string[]; key_takeaway?: string; highlights?: string[] }>
+  writing_verification?: Record<string, unknown>
+  writing_history?: { stage: string; section_id?: string; round?: number; accepted?: boolean; error?: string;
+    draft?: { paragraphs?: string[]; key_takeaway?: string }; drafts?: AuditSnapshot['drafts'] }[]
+  task_id?: string
+  audit_review?: AuditReview
+  evidence?: Evidence[]
+  analysis?: { claims?: Claim[]; [key: string]: unknown }
+  structured?: Record<string, unknown>
+  sentiment?: Record<string, unknown>
+  searches?: { search_id: string; query: string; status: string; result_count?: number; error?: string }[]
+  trace?: TraceSpan[]
 }
 
 /* ── Post-write verification ─────────────────────────────────────────────── */
@@ -316,6 +420,7 @@ export interface VerifyFinding {
 }
 
 export interface VerifyReview {
+  simulated?: boolean
   /** `pass` clean · `revised` defects found and dealt with · `flagged` some survived. */
   verdict?: 'pass' | 'revised' | 'flagged'
   scores?: Record<string, number>
@@ -348,6 +453,9 @@ export interface ReportFigure {
 }
 
 export interface Report {
+  writing_plan?: WritingPlan
+  material_usage?: MaterialUsage[]
+  writing_assertions?: WrittenAssertion[]
   industry_modules?: IndustryModule[]
   llm_provider?: 'mock' | 'qwen' | 'openai'
   is_mock?: boolean
